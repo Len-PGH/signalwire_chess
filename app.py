@@ -715,14 +715,22 @@ class ChessOpponent(AgentBase):
             # Attribute by source: click/voice moves are the PLAYER's, engine moves are YOURS.
             user_moves = [san for (_id, _ply, san, src) in rows if src != "engine"]
             agent_moves = [san for (_id, _ply, san, src) in rows if src == "engine"]
-            reply = f", and you (the AGENT) already replied {', '.join(agent_moves)}" if agent_moves else ""
+            um, am = ", ".join(user_moves), ", ".join(agent_moves)
+            if user_moves and agent_moves:
+                body = (f"The USER moved {um} on the board, and you (the AGENT, Sigmond) already "
+                        f"replied {am}. Announce the USER's move, then state your reply.")
+            elif agent_moves and not user_moves:
+                # engine's opening move in a game where the player is Black
+                body = (f"You (the AGENT, Sigmond) have OPENED the game with {am} — the player is "
+                        f"playing Black, so it's their move now. Announce that you opened with {am} "
+                        f"and invite them to make their move.")
+            else:
+                body = f"The USER moved {um} on the board. Acknowledge their move."
             r = SwaigFunctionResult(
-                "CHESS BOARD UPDATE (not speech from the user). "
-                f"The USER moved {', '.join(user_moves) or '(none)'} by clicking the board" + reply + ". "
-                "These are ALREADY applied — do NOT call make_move. "
-                f"Tell the user their move ({', '.join(user_moves) or 'none'}) and, if any, your reply "
-                f"({', '.join(agent_moves) or 'none'}). The USER's moves are the USER's and the AGENT's moves are "
-                "the AGENT's — never swap them. Briefly comment, then keep watching the board.")
+                "CHESS BOARD UPDATE (not speech from the user). " + body +
+                " These moves are ALREADY applied — do NOT call make_move. Never swap who made "
+                "which move (USER moves are the player's, AGENT moves are yours). "
+                "Briefly comment, then keep watching the board.")
             r.swml_user_event(board_payload(state, board))
             r.enable_functions_on_timeout(True)
             r.wait_for_user(timeout=4)
@@ -1126,7 +1134,9 @@ def create_server(port=None):
         if state["player_color"] == "black":
             emove = engine_reply(board, state["difficulty"])
             if emove:
-                apply_move(state, board, emove, gid, "engine", narrated=True)
+                # narrated=False so check_board_moves catches it on connect and Sigmond
+                # announces his opening move (this game is created before the AI call starts).
+                apply_move(state, board, emove, gid, "engine", narrated=False)
                 last = emove
                 attach_gif(state, START_FEN, [emove.uci()])
         return {"game_id": gid, "board": board_payload(state, board, last)}
