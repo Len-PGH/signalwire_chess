@@ -12,7 +12,10 @@ let board = null;          // last board_update payload
 let selected = null;       // selected square (algebraic) awaiting a target
 let isMuted = false, teardownDone = false, busy = false;
 
-const GLYPH = { p:'♟', n:'♞', b:'♝', r:'♜', q:'♛', k:'♚' };
+// U+FE0E (text variation selector) forces monochrome TEXT rendering — without it,
+// mobile browsers (iOS/Android) draw these as emoji, which resize squares and can
+// degrade to look-alike glyphs. We color them white/black via CSS instead.
+const GLYPH = { p:'♟︎', n:'♞︎', b:'♝︎', r:'♜︎', q:'♛︎', k:'♚︎' };
 
 // ---- dom ----
 const $ = id => document.getElementById(id);

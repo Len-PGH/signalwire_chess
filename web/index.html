@@ -160,9 +160,10 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
 .tf input:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(4,78,244,.3)}
 .dialog .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
 
-/* let grid/flex children shrink below their content so nothing overflows */
-.layout > div{min-width:0}
 .board,.tray,.card{max-width:100%}
+/* chess pieces: force monochrome TEXT rendering with a symbol-capable font so they
+   never fall back to emoji (which resize squares / look inconsistent on mobile) */
+.sq .pc,.tray .cap{font-family:"Noto Sans Symbols 2","Segoe UI Symbol","Apple Symbols","DejaVu Sans","Symbola",sans-serif;font-variant-emoji:text}
 
 /* ---- mobile ---- */
 @media(max-width:600px){
@@ -173,6 +174,7 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
   .btn .lbl{display:none}                 /* nav buttons become icon-only */
   .appbar .btn-text{padding:0 10px}
   .layout{grid-template-columns:minmax(0,1fr)}   /* single column that can shrink */
+  .layout > div{min-width:0}
   .wrap{padding:16px 12px 56px}
   .chips{gap:8px;margin-bottom:14px}
   .chip{padding:6px 11px;font-size:12.5px}
@@ -296,6 +298,6 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
 })();
 </script>
 <script src="signalwire.js"></script>
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>
