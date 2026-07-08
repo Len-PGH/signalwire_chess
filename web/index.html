@@ -101,7 +101,16 @@ h1,h2,.brand{font-family:var(--heading);letter-spacing:-.01em}
 .chip .dot{width:8px;height:8px;border-radius:50%;background:var(--subtle)}
 .chip.live .dot{background:var(--success);box-shadow:0 0 0 3px color-mix(in srgb,var(--success) 25%,transparent)}
 .layout{display:grid;grid-template-columns:minmax(320px,1fr) 380px;gap:22px;align-items:start}
-@media(max-width:900px){.layout{grid-template-columns:1fr}}
+.sidecol{display:flex;flex-direction:column;gap:18px}
+@media(max-width:900px){
+  /* stack in one column and put the Live Session card (Connect & Play) above the board */
+  .layout{display:flex;flex-direction:column;gap:18px}
+  .sidecol{display:contents}          /* let its cards join the layout flow so they can reorder */
+  .live-area{order:1}
+  .boardcard{order:2}
+  .hist-area{order:3}
+  .log-area{order:4}
+}
 
 .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--e1);overflow:hidden}
 .card .hd{display:flex;align-items:center;gap:10px;padding:13px 18px;border-bottom:1px solid var(--border)}
@@ -134,18 +143,16 @@ h1,h2,.brand{font-family:var(--heading);letter-spacing:-.01em}
 .sq .pc.b{color:var(--pc-b);text-shadow:0 1px 1px rgba(255,255,255,.22)}
 .sq .dot{position:absolute;z-index:1;width:30%;height:30%;border-radius:50%;background:var(--dot)}
 .sq .ring{position:absolute;z-index:1;inset:7%;border-radius:50%;border:5px solid var(--dot)}
-/* framed board: coordinates live in a gutter on all four sides */
-.boardframe{--gut:22px;margin:10px 0;display:grid;
-  grid-template-columns:var(--gut) 1fr var(--gut);
-  grid-template-rows:var(--gut) 1fr var(--gut);
-  grid-template-areas:". ft ." "rl bd rr" ". fb .";
-  background:var(--raised);border:1px solid var(--border);border-radius:14px;
-  padding:7px;box-shadow:var(--e2)}
-.boardframe .board{grid-area:bd;margin:0;box-shadow:none;border-radius:6px}
-#files-top{grid-area:ft} #files-bottom{grid-area:fb}
-#ranks-left{grid-area:rl} #ranks-right{grid-area:rr}
-.coord-row{display:grid;grid-template-columns:repeat(8,1fr)}
-.coord-col{display:grid;grid-template-rows:repeat(8,1fr)}
+/* framed board: a padding gutter holds coordinates on all four sides. The board
+   fills the content box (width-driven, no circular grid sizing), and the coord
+   strips are absolutely positioned in the gutters, aligned to the board edges. */
+.boardframe{--gut:22px;position:relative;margin:10px 0;padding:var(--gut);
+  background:var(--raised);border:1px solid var(--border);border-radius:14px;box-shadow:var(--e2)}
+.boardframe .board{width:100%;aspect-ratio:1/1;margin:0;box-shadow:none;border-radius:6px}
+.coord-row{position:absolute;left:var(--gut);right:var(--gut);height:var(--gut);display:grid;grid-template-columns:repeat(8,1fr)}
+.coord-col{position:absolute;top:var(--gut);bottom:var(--gut);width:var(--gut);display:grid;grid-template-rows:repeat(8,1fr)}
+#files-top{top:0} #files-bottom{bottom:0}
+#ranks-left{left:0} #ranks-right{right:0}
 .coord-row span,.coord-col span{display:flex;align-items:center;justify-content:center;
   font-family:var(--mono);font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase}
 .hint{color:var(--muted);font-size:12.5px;margin-top:8px}
@@ -206,7 +213,7 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
   .chip{padding:6px 11px;font-size:12.5px}
   .card .bd,.boardcard .bd{padding:12px}
   .card .hd{padding:12px 14px}
-  .boardframe{--gut:16px;padding:5px}
+  .boardframe{--gut:16px}
   .coord-row span,.coord-col span{font-size:10px}
   .controls{gap:8px}
   .dialog{border-radius:20px;padding:22px 20px 18px}
@@ -256,8 +263,8 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
       </div>
     </div>
 
-    <div>
-      <div class="card" style="margin-bottom:18px">
+    <div class="sidecol">
+      <div class="card live-area">
         <div class="hd"><span class="material-symbols-outlined">videocam</span><h2>LIVE SESSION</h2></div>
         <div class="bd">
           <div id="video-container"></div>
@@ -292,12 +299,12 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
         </div>
       </div>
 
-      <div class="card" style="margin-bottom:18px">
+      <div class="card hist-area">
         <div class="hd"><span class="material-symbols-outlined">history</span><h2>MOVE HISTORY</h2></div>
         <div class="bd"><div class="history" id="history"><span class="hint">No moves yet.</span></div></div>
       </div>
 
-      <div class="card">
+      <div class="card log-area">
         <div class="hd"><span class="material-symbols-outlined">terminal</span><h2>EVENT LOG</h2></div>
         <div class="bd"><div class="log" id="log"></div></div>
       </div>
@@ -331,6 +338,6 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
 })();
 </script>
 <script src="signalwire.js"></script>
-<script src="app.js?v=8"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>

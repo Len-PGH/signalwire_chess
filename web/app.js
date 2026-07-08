@@ -332,10 +332,11 @@ async function connectToCall() {
     connEl.textContent = 'requesting mic';
     await ensureMicrophone();
 
-    // reuse the game created at page load (avoids a duplicate /chess/new that
-    // would reset the board); only create one if somehow missing.
+    // Start a fresh game reflecting the chosen color/difficulty. This is where the
+    // game actually begins (and where the engine opens if you picked Black) — never
+    // before Connect is pressed. Pre-connect the board is only a preview.
     connEl.textContent = 'starting game';
-    if (!gameId) await newGame();
+    await newGame();
     await attributeGame();   // make sure this game is tagged with your name before play
 
     connEl.textContent = 'getting token';
@@ -452,13 +453,12 @@ resignBtn.addEventListener('click', async () => {
 });
 // Color/difficulty are pre-game settings. Changing one before connecting starts a
 // fresh game with those settings (so picking Black actually gives you Black — and
-// flips the board / lets Sigmond open). Guarded on !call so it never resets a live game.
-difficultySel.addEventListener('change', () => {
-  levelEl.textContent = difficultySel.value;
-  if (!call) newGame().catch(e => logEvent('new game error', { error: e.message }));
-});
+// Color/difficulty are pre-game settings applied when you press Connect & Play.
+// Changing color before connecting only PREVIEWS the orientation (flips the board) —
+// it must NOT start a game or let the engine move until you actually connect.
+difficultySel.addEventListener('change', () => { levelEl.textContent = difficultySel.value; });
 colorSel.addEventListener('change', () => {
-  if (!call) newGame().catch(e => logEvent('new game error', { error: e.message }));
+  if (!call && board) { board.player_color = colorSel.value; selected = null; renderBoard(board); }
 });
 
 // ---- name capture ----
