@@ -132,6 +132,24 @@ tbody tr.me{background:color-mix(in srgb,var(--sw-fuchsia) 8%,transparent);box-s
 .ex{background:var(--raised);border:1px solid var(--border);border-radius:12px;padding:13px 12px;text-align:center}
 .ex b{display:block;font-family:var(--heading);font-size:26px;font-weight:700;color:var(--sw-fuchsia);line-height:1}
 .ex span{font-size:11.5px;color:var(--muted);display:block;margin-top:5px;line-height:1.35}
+
+/* ---- mobile ---- */
+@media(max-width:600px){
+  .appbar{flex-wrap:wrap;gap:6px;padding:9px 12px}
+  .brand{font-size:16px}
+  .btn{padding:0 12px;height:38px;font-size:13.5px}
+  .btn .lbl{display:none}
+  .wrap{padding:22px 12px 60px}
+  h1{font-size:26px}
+  .head{gap:8px}
+  .housecard{padding:16px;gap:14px}
+  .housecard .house-stats{width:100%;justify-content:space-between;gap:12px}
+  .tablecard{overflow-x:auto}          /* wide table scrolls inside its card */
+  table{min-width:540px}
+  thead th,tbody td{padding:11px 12px}
+  .scorecard{padding:16px}
+  .sexamples{grid-template-columns:repeat(2,1fr)}
+}
 </style>
 </head>
 <body>
@@ -139,7 +157,7 @@ tbody tr.me{background:color-mix(in srgb,var(--sw-fuchsia) 8%,transparent);box-s
 <div class="appbar">
   <div class="brand"><span class="logo">♞</span> SignalWire Chess</div>
   <div class="spacer"></div>
-  <a class="btn btn-text" href="how-it-works.html"><span class="material-symbols-outlined">help</span> How it works</a>
+  <a class="btn btn-text" href="how-it-works.html" title="How it works"><span class="material-symbols-outlined">help</span> <span class="lbl">How it works</span></a>
   <button class="iconbtn" id="themeBtn" title="Toggle theme"><span class="material-symbols-outlined">light_mode</span></button>
   <a class="btn btn-filled" href="index.html"><span class="material-symbols-outlined">play_arrow</span> Play</a>
 </div>

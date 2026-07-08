@@ -159,6 +159,31 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
   border-radius:10px;background:var(--input-bg);color:var(--fg)}
 .tf input:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(4,78,244,.3)}
 .dialog .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+
+/* let grid/flex children shrink below their content so nothing overflows */
+.layout > div{min-width:0}
+.board,.tray,.card{max-width:100%}
+
+/* ---- mobile ---- */
+@media(max-width:600px){
+  .appbar{flex-wrap:wrap;gap:6px;padding:9px 12px}
+  .brand{font-size:16px;gap:8px;min-width:0}
+  .brand small{display:none}
+  .btn{padding:0 12px;height:38px;font-size:13.5px}
+  .btn .lbl{display:none}                 /* nav buttons become icon-only */
+  .appbar .btn-text{padding:0 10px}
+  .layout{grid-template-columns:minmax(0,1fr)}   /* single column that can shrink */
+  .wrap{padding:16px 12px 56px}
+  .chips{gap:8px;margin-bottom:14px}
+  .chip{padding:6px 11px;font-size:12.5px}
+  .card .bd,.boardcard .bd{padding:12px}
+  .card .hd{padding:12px 14px}
+  .controls{gap:8px}
+  .dialog{border-radius:20px;padding:22px 20px 18px}
+}
+@media(max-width:360px){
+  .btn-filled .lbl{display:inline}        /* keep the primary CTA labeled even when tiny */
+}
 </style>
 </head>
 <body>
@@ -166,8 +191,8 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
 <div class="appbar">
   <div class="brand"><span class="logo">♞</span> SignalWire Chess <small>· play the AI</small></div>
   <div class="spacer"></div>
-  <a class="btn btn-text" href="leaderboard.html"><span class="material-symbols-outlined">leaderboard</span> Leaderboard</a>
-  <a class="btn btn-text" href="how-it-works.html"><span class="material-symbols-outlined">help</span> How it works</a>
+  <a class="btn btn-text" href="leaderboard.html" title="Leaderboard"><span class="material-symbols-outlined">leaderboard</span> <span class="lbl">Leaderboard</span></a>
+  <a class="btn btn-text" href="how-it-works.html" title="How it works"><span class="material-symbols-outlined">help</span> <span class="lbl">How it works</span></a>
   <button class="iconbtn" id="themeBtn" title="Toggle theme"><span class="material-symbols-outlined">light_mode</span></button>
   <div class="namechip" id="nameChip" title="Change name">
     <span class="avatar" id="nameAvatar">?</span><span id="nameLabel">Guest</span>
