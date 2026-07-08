@@ -447,7 +447,16 @@ resignBtn.addEventListener('click', async () => {
     logEvent('Resigned', { result: j.board.result });
   } catch (e) { logEvent('resign error', { error: e.message }); }
 });
-difficultySel.addEventListener('change', () => { levelEl.textContent = difficultySel.value; });
+// Color/difficulty are pre-game settings. Changing one before connecting starts a
+// fresh game with those settings (so picking Black actually gives you Black — and
+// flips the board / lets Sigmond open). Guarded on !call so it never resets a live game.
+difficultySel.addEventListener('change', () => {
+  levelEl.textContent = difficultySel.value;
+  if (!call) newGame().catch(e => logEvent('new game error', { error: e.message }));
+});
+colorSel.addEventListener('change', () => {
+  if (!call) newGame().catch(e => logEvent('new game error', { error: e.message }));
+});
 
 // ---- name capture ----
 nameChip.addEventListener('click', openNameDialog);
