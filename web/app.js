@@ -69,9 +69,12 @@ async function api(path, opts) {
   if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
   return j;
 }
+let newGameSeq = 0;
 async function newGame() {
+  const seq = ++newGameSeq;   // guards against a slower earlier new-game clobbering a newer one
   const difficulty = difficultySel.value, player_color = colorSel.value;
   const j = await api(`/chess/new?difficulty=${encodeURIComponent(difficulty)}&player_color=${encodeURIComponent(player_color)}&player_name=${encodeURIComponent(getPlayerName())}`, { method: 'POST' });
+  if (seq !== newGameSeq) return;   // a newer newGame() started; discard this stale result
   gameId = j.game_id;
   selected = null;
   logEvent('New game', { game_id: gameId, difficulty, player_color });
