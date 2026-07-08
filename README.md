@@ -1,5 +1,9 @@
 # ♞ SignalWire Chess
 
+<p align="center">
+  <img src="docs/screenshot.png" alt="SignalWire Chess — interactive board with a live AI opponent" width="900">
+</p>
+
 Play live chess against **Sigmond**, a [SignalWire](https://signalwire.com) AI agent, over a real‑time WebRTC audio/video call — **by voice or by moving the pieces on screen**. The board stays in sync with the AI the whole game, moves animate in the video window, and results feed a leaderboard.
 
 > Speak *"pawn to e4"* or just drag the piece — Sigmond (powered by Stockfish) answers out loud and on the board.
