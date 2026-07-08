@@ -134,12 +134,20 @@ h1,h2,.brand{font-family:var(--heading);letter-spacing:-.01em}
 .sq .pc.b{color:var(--pc-b);text-shadow:0 1px 1px rgba(255,255,255,.22)}
 .sq .dot{position:absolute;z-index:1;width:30%;height:30%;border-radius:50%;background:var(--dot)}
 .sq .ring{position:absolute;z-index:1;inset:7%;border-radius:50%;border:5px solid var(--dot)}
-/* algebraic coordinates inside edge squares (files bottom-right, ranks top-left) */
-.sq .coord{position:absolute;z-index:3;font-family:var(--mono);font-weight:700;font-size:24cqmin;line-height:1;pointer-events:none;user-select:none}
-.sq .coord.rank{top:5%;left:6%}
-.sq .coord.file{bottom:3%;right:6%}
-.sq.light .coord{color:var(--dsq)}   /* dark label on light square */
-.sq.dark .coord{color:var(--lsq)}    /* light label on dark square */
+/* framed board: coordinates live in a gutter on all four sides */
+.boardframe{--gut:22px;margin:10px 0;display:grid;
+  grid-template-columns:var(--gut) 1fr var(--gut);
+  grid-template-rows:var(--gut) 1fr var(--gut);
+  grid-template-areas:". ft ." "rl bd rr" ". fb .";
+  background:var(--raised);border:1px solid var(--border);border-radius:14px;
+  padding:7px;box-shadow:var(--e2)}
+.boardframe .board{grid-area:bd;margin:0;box-shadow:none;border-radius:6px}
+#files-top{grid-area:ft} #files-bottom{grid-area:fb}
+#ranks-left{grid-area:rl} #ranks-right{grid-area:rr}
+.coord-row{display:grid;grid-template-columns:repeat(8,1fr)}
+.coord-col{display:grid;grid-template-rows:repeat(8,1fr)}
+.coord-row span,.coord-col span{display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase}
 .hint{color:var(--muted);font-size:12.5px;margin-top:8px}
 .banner{margin:2px 0 12px;padding:12px 16px;border-radius:12px;font-weight:500;font-size:14px;display:none;align-items:center;gap:10px}
 .banner.show{display:flex}
@@ -198,6 +206,8 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
   .chip{padding:6px 11px;font-size:12.5px}
   .card .bd,.boardcard .bd{padding:12px}
   .card .hd{padding:12px 14px}
+  .boardframe{--gut:16px;padding:5px}
+  .coord-row span,.coord-col span{font-size:10px}
   .controls{gap:8px}
   .dialog{border-radius:20px;padding:22px 20px 18px}
 }
@@ -234,7 +244,13 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
       <div class="bd">
         <div class="banner" id="banner"></div>
         <div class="tray" id="tray-top"><span class="lbl">Captured</span></div>
-        <div class="board" id="board"></div>
+        <div class="boardframe">
+          <div class="coord-row" id="files-top"></div>
+          <div class="coord-col" id="ranks-left"></div>
+          <div class="board" id="board"></div>
+          <div class="coord-col" id="ranks-right"></div>
+          <div class="coord-row" id="files-bottom"></div>
+        </div>
         <div class="tray" id="tray-bottom"><span class="lbl">Captured</span></div>
         <div class="hint">Click one of your pieces to see its legal moves, then a highlighted square — or just say the move out loud.</div>
       </div>
@@ -315,6 +331,6 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
 })();
 </script>
 <script src="signalwire.js"></script>
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>
