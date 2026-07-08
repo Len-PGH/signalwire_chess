@@ -19,7 +19,7 @@ const GLYPH = { p:'♟︎', n:'♞︎', b:'♝︎', r:'♜︎', q:'♛︎', k:'�
 
 // ---- dom ----
 const $ = id => document.getElementById(id);
-const boardEl = $('board'), filesEl = $('files');
+const boardEl = $('board');
 const trayTop = $('tray-top'), trayBottom = $('tray-bottom');
 const connEl = $('conn'), turnEl = $('turn'), levelEl = $('level'), matEl = $('material');
 const historyEl = $('history'), logEl = $('log'), bannerEl = $('banner');
@@ -152,6 +152,8 @@ function renderBoard(p) {
   boardEl.innerHTML = '';
   const order = flip ? [...Array(8).keys()].reverse() : [...Array(8).keys()];
   const fileOrder = flip ? [...Array(8).keys()].reverse() : [...Array(8).keys()];
+  const bottomR = order[order.length - 1];   // display bottom row -> show file letters
+  const leftF = fileOrder[0];                 // display left column -> show rank numbers
   for (const r of order) {
     for (const f of fileOrder) {
       const name = sqName(f, r);
@@ -163,6 +165,10 @@ function renderBoard(p) {
       if (name === lastFrom || name === lastTo) sq.classList.add('last');
       if (name === checkSq) sq.classList.add('check');
       if (name === selected) sq.classList.add('sel');
+
+      // algebraic coordinates inside the edge squares (files bottom, ranks left)
+      if (f === leftF) { const c = document.createElement('span'); c.className = 'coord rank'; c.textContent = 8 - r; sq.appendChild(c); }
+      if (r === bottomR) { const c = document.createElement('span'); c.className = 'coord file'; c.textContent = 'abcdefgh'[f]; sq.appendChild(c); }
 
       if (piece) {
         const isWhite = piece === piece.toUpperCase();
@@ -190,10 +196,6 @@ function renderBoard(p) {
       boardEl.appendChild(sq);
     }
   }
-
-  // file labels
-  const fl = flip ? 'hgfedcba' : 'abcdefgh';
-  filesEl.innerHTML = fl.split('').map(c => `<span>${c}</span>`).join('');
 
   // history
   renderHistory(p.history || []);
