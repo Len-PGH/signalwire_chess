@@ -149,6 +149,14 @@ h1,h2,.brand{font-family:var(--heading);letter-spacing:-.01em}
 .boardframe{--gut:22px;position:relative;margin:10px 0;padding:var(--gut);
   background:var(--raised);border:1px solid var(--border);border-radius:14px;box-shadow:var(--e2)}
 .boardframe .board{width:100%;aspect-ratio:1/1;margin:0;box-shadow:none;border-radius:6px}
+/* Learn-mode eval bar (left of board) + best-move arrow overlay */
+.boardrow{display:flex;gap:10px;align-items:stretch;margin:10px 0}
+.boardrow .boardframe{flex:1;margin:0}
+.evalbar{width:16px;flex:none;position:relative;border-radius:8px;overflow:hidden;background:#26303b;border:1px solid var(--border);display:none}
+.evalfill{position:absolute;left:0;right:0;bottom:0;height:50%;background:#eef2f8;transition:height .45s ease}
+.arrows{position:absolute;inset:var(--gut);pointer-events:none;z-index:5}
+.arrows line{stroke:var(--sw-turq);stroke-width:.26;stroke-linecap:round;opacity:.9}
+.arrows .ah{fill:var(--sw-turq);opacity:.9}
 .coord-row{position:absolute;left:var(--gut);right:var(--gut);height:var(--gut);display:grid;grid-template-columns:repeat(8,1fr)}
 .coord-col{position:absolute;top:var(--gut);bottom:var(--gut);width:var(--gut);display:grid;grid-template-rows:repeat(8,1fr)}
 #files-top{top:0} #files-bottom{bottom:0}
@@ -249,6 +257,7 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
     <div class="chip"><span class="k">Turn</span><span class="v" id="turn">—</span></div>
     <div class="chip"><span class="k">Level</span><span class="v" id="level">medium</span></div>
     <div class="chip"><span class="k">Material</span><span class="v" id="material">even</span></div>
+    <div class="chip" id="evalChip" style="display:none"><span class="k">Eval</span><span class="v" id="evalVal">—</span></div>
   </div>
 
   <div class="layout">
@@ -257,12 +266,16 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
       <div class="bd">
         <div class="banner" id="banner"></div>
         <div class="tray" id="tray-top"><span class="lbl">Captured</span></div>
-        <div class="boardframe">
-          <div class="coord-row" id="files-top"></div>
-          <div class="coord-col" id="ranks-left"></div>
-          <div class="board" id="board"></div>
-          <div class="coord-col" id="ranks-right"></div>
-          <div class="coord-row" id="files-bottom"></div>
+        <div class="boardrow">
+          <div class="evalbar" id="evalbar"><div class="evalfill" id="evalfill"></div></div>
+          <div class="boardframe">
+            <div class="coord-row" id="files-top"></div>
+            <div class="coord-col" id="ranks-left"></div>
+            <div class="board" id="board"></div>
+            <div class="coord-col" id="ranks-right"></div>
+            <div class="coord-row" id="files-bottom"></div>
+            <svg class="arrows" id="arrows" viewBox="0 0 8 8" preserveAspectRatio="none" aria-hidden="true"></svg>
+          </div>
         </div>
         <div class="tray" id="tray-bottom"><span class="lbl">Captured</span></div>
         <div class="hint">Click one of your pieces to see its legal moves, then a highlighted square — or just say the move out loud.</div>
@@ -352,6 +365,6 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
 })();
 </script>
 <script src="signalwire.js"></script>
-<script src="app.js?v=10"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>

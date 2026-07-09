@@ -29,6 +29,7 @@ const connectBtn = $('connectBtn'), hangupBtn = $('hangupBtn'), muteBtn = $('mut
 const newBtn = $('newBtn'), resignBtn = $('resignBtn');
 const difficultySel = $('difficulty'), colorSel = $('color');
 const modeToggle = $('modeToggle'), modeHint = $('modeHint');
+const evalbar = $('evalbar'), evalfill = $('evalfill'), arrows = $('arrows'), evalChip = $('evalChip'), evalVal = $('evalVal');
 const connChip = $('connChip');
 const nameChip = $('nameChip'), nameLabel = $('nameLabel'), nameAvatar = $('nameAvatar');
 const nameDialog = $('nameDialog'), nameInput = $('nameInput'), nameSave = $('nameSave'), nameSkip = $('nameSkip');
@@ -229,6 +230,51 @@ function renderBoard(p) {
   resignBtn.disabled = !gameId || p.game_over;
 
   playMoveGif(p);
+  updateAnalysis(p);   // learn-mode eval bar + best-move arrow (no-op in game mode)
+}
+
+// ---- Learn-mode eval bar + best-move arrow (fed by /chess/analysis) ----
+let analysisSeq = 0;
+function sqToXY(sq, flip) {            // 'e2' -> [x,y] in the board's 0..8 space
+  const f = sq.charCodeAt(0) - 97, r = parseInt(sq[1], 10);
+  const col = flip ? 7 - f : f;
+  const rowFromTop = flip ? r - 1 : 8 - r;
+  return [col + 0.5, rowFromTop + 0.5];
+}
+function clearArrow() { arrows.innerHTML = ''; }
+function drawArrow(from, to) {
+  const [x1, y1] = from, [x2, y2] = to;
+  const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+  const head = 0.6, w = 0.34;
+  const bx = x2 - ux * head, by = y2 - uy * head, px = -uy * w, py = ux * w;
+  arrows.innerHTML =
+    `<line x1="${x1}" y1="${y1}" x2="${bx.toFixed(3)}" y2="${by.toFixed(3)}"></line>` +
+    `<polygon class="ah" points="${x2},${y2} ${(bx + px).toFixed(3)},${(by + py).toFixed(3)} ${(bx - px).toFixed(3)},${(by - py).toFixed(3)}"></polygon>`;
+}
+function hideAnalysis() { evalbar.style.display = 'none'; evalChip.style.display = 'none'; clearArrow(); }
+async function updateAnalysis(p) {
+  if (mode !== 'learn' || !gameId) { hideAnalysis(); return; }
+  const seq = ++analysisSeq;
+  evalbar.style.display = 'block';
+  let a;
+  try { a = await api(`/chess/analysis?game_id=${encodeURIComponent(gameId)}`); }
+  catch (e) { return; }
+  if (seq !== analysisSeq) return;                 // superseded by a newer position
+  // eval -> White's share of the bar (0..100) via a soft sigmoid
+  let whitePct = 50, label = '—';
+  if (a.mate != null) { whitePct = a.mate > 0 ? 100 : 0; label = (a.mate > 0 ? 'M' : '-M') + Math.abs(a.mate); }
+  else if (a.cp != null) { whitePct = 50 + 50 * (2 / (1 + Math.exp(-0.004 * a.cp)) - 1); label = (a.cp >= 0 ? '+' : '') + (a.cp / 100).toFixed(1); }
+  // orient the bar to the board: the player's colour sits at the bottom
+  const flip = (p.player_color === 'black');
+  if (!flip) { evalbar.style.background = '#26303b'; evalfill.style.background = '#eef2f8'; evalfill.style.height = whitePct + '%'; }
+  else { evalbar.style.background = '#eef2f8'; evalfill.style.background = '#26303b'; evalfill.style.height = (100 - whitePct) + '%'; }
+  evalChip.style.display = '';
+  evalVal.textContent = label;
+  // best-move arrow: only when it's the player's turn (so we're advising them)
+  const yourTurn = (a.turn === p.player_color);
+  if (a.best_move && yourTurn && !a.game_over && !p.game_over)
+    drawArrow(sqToXY(a.best_move.slice(0, 2), flip), sqToXY(a.best_move.slice(2, 4), flip));
+  else clearArrow();
 }
 
 // ---- per-move animated GIF overlay (server-rendered; fades back to avatar) ----
@@ -475,6 +521,7 @@ modeToggle.addEventListener('click', e => {
   mode = btn.dataset.mode === 'learn' ? 'learn' : 'game';
   localStorage.setItem('chessMode', mode);
   applyMode();
+  if (board) updateAnalysis(board); else if (mode !== 'learn') hideAnalysis();
 });
 applyMode();
 

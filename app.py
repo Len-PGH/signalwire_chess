@@ -471,6 +471,30 @@ def best_moves(fen, n=3):
         return []
 
 
+def position_eval(fen):
+    """Evaluate the current position for the eval bar + best-move arrow.
+    Returns {cp (white-relative), mate (signed, or None), best_move (uci for the side
+    to move), best_san, turn, game_over}."""
+    try:
+        board = chess.Board(fen)
+        turn = "white" if board.turn == chess.WHITE else "black"
+        if board.is_game_over():
+            return {"cp": None, "mate": None, "best_move": None, "best_san": None,
+                    "turn": turn, "game_over": True}
+        with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as eng:
+            info = eng.analyse(board, chess.engine.Limit(time=ANALYSIS_TIME))
+        score = info["score"].white()          # always from White's perspective for the bar
+        best = info["pv"][0] if info.get("pv") else None
+        mate = score.mate() if score.is_mate() else None
+        return {"cp": (None if mate is not None else score.score()),
+                "mate": mate,
+                "best_move": best.uci() if best else None,
+                "best_san": board.san(best) if best else None,
+                "turn": turn, "game_over": False}
+    except Exception:
+        return None
+
+
 def analyze_move(fen_before, played_uci):
     """Grade the played move against the engine's best. Returns a dict or None.
     grade ∈ {best, good, inaccuracy, mistake, blunder}; delta is centipawns lost."""
@@ -1313,6 +1337,15 @@ def create_server(port=None):
             return JSONResponse({"error": "unknown game_id"}, status_code=404)
         board = chess.Board(state["fen"])
         return {"board": board_payload(state, board)}
+
+    @server.app.get('/chess/analysis')
+    def chess_analysis(game_id: str):
+        """Stockfish eval + best move for the current position (Learn-mode eval bar +
+        best-move arrow). Off the move path, so moves stay instant."""
+        state = GAMES.get(game_id)
+        if state is None:
+            return JSONResponse({"error": "unknown game_id"}, status_code=404)
+        return position_eval(state["fen"]) or {"error": "analysis unavailable"}
 
     @server.app.post('/chess/rename')
     def chess_rename(game_id: str, player_name: str = ""):
