@@ -168,6 +168,10 @@ h1,h2,.brand{font-family:var(--heading);letter-spacing:-.01em}
 .banner.show{display:flex}
 .banner.check{background:color-mix(in srgb,var(--sw-gold) 16%,transparent);color:var(--sw-gold);border:1px solid color-mix(in srgb,var(--sw-gold) 30%,transparent)}
 .banner.over{background:var(--tonal-bg);color:var(--tonal-fg);border:1px solid var(--border)}
+.banner.reconnect{background:color-mix(in srgb,var(--sw-gold) 16%,transparent);color:var(--sw-gold);border:1px solid color-mix(in srgb,var(--sw-gold) 32%,transparent)}
+.banner.reconnect .material-symbols-outlined{color:var(--sw-gold);font-size:19px}
+.spin{display:inline-flex;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 
 /* side */
 #video-container{position:relative;width:100%;aspect-ratio:16/9;background:#0b0b14;border-radius:12px;overflow:hidden;margin-bottom:14px;display:none}
@@ -264,6 +268,7 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
     <div class="card boardcard">
       <div class="hd"><span class="material-symbols-outlined">grid_on</span><h2>BOARD</h2></div>
       <div class="bd">
+        <div class="banner reconnect" id="reconnectBanner"><span class="material-symbols-outlined spin">autorenew</span><span id="reconnectText">Reconnecting…</span></div>
         <div class="banner" id="banner"></div>
         <div class="tray" id="tray-top"><span class="lbl">Captured</span></div>
         <div class="boardrow">
@@ -365,6 +370,6 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
 })();
 </script>
 <script src="signalwire.js"></script>
-<script src="app.js?v=12"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

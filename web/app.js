@@ -25,6 +25,7 @@ const filesTop = $('files-top'), filesBottom = $('files-bottom'), ranksLeft = $(
 const trayTop = $('tray-top'), trayBottom = $('tray-bottom');
 const connEl = $('conn'), turnEl = $('turn'), levelEl = $('level'), matEl = $('material');
 const historyEl = $('history'), logEl = $('log'), bannerEl = $('banner');
+const reconnectBanner = $('reconnectBanner'), reconnectText = $('reconnectText');
 const connectBtn = $('connectBtn'), hangupBtn = $('hangupBtn'), muteBtn = $('muteBtn');
 const newBtn = $('newBtn'), resignBtn = $('resignBtn');
 const difficultySel = $('difficulty'), colorSel = $('color');
@@ -442,6 +443,7 @@ async function openCall() {
     logEvent('call.status', { status: st });
     if (st === 'connected') {
       wasConnected = true; reconnectAttempts = 0;
+      hideReconnectBanner();
       connEl.textContent = 'connected';
       connChip.classList.add('live');
       connectBtn.style.display = 'none';
@@ -462,10 +464,14 @@ function cleanupCall() {
 }
 
 // Auto-reconnect after an UNEXPECTED drop — resumes the SAME game (server-side state).
+function showReconnectBanner(txt) { reconnectText.textContent = txt; reconnectBanner.classList.add('show'); }
+function hideReconnectBanner() { reconnectBanner.classList.remove('show'); }
+
 async function reconnect() {
   reconnectAttempts++;
   connChip.classList.remove('live');
   connEl.textContent = `reconnecting… (${reconnectAttempts}/${MAX_RECONNECT})`;
+  showReconnectBanner(`Connection lost — reconnecting… (${reconnectAttempts}/${MAX_RECONNECT})`);
   logEvent('Connection dropped — reconnecting', { attempt: reconnectAttempts });
   cleanupCall();
   try {
@@ -490,6 +496,7 @@ function handleDisconnect() {
 
 function finalTeardown() {
   if (teardownDone) return; teardownDone = true;
+  hideReconnectBanner();
   cleanupCall();
   if (remoteVideoEl && remoteVideoEl.srcObject) { try { remoteVideoEl.srcObject.getTracks().forEach(t => t.stop()); } catch (_) {} }
   connEl.textContent = 'disconnected';
