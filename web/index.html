@@ -173,6 +173,12 @@ h1,h2,.brand{font-family:var(--heading);letter-spacing:-.01em}
 select{flex:1;font-family:var(--sans);font-size:14px;background:var(--input-bg);color:var(--fg);
   border:1px solid var(--border-strong);border-radius:10px;padding:11px 12px;cursor:pointer}
 select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(4,78,244,.3)}
+.segmented{display:inline-flex;border:1px solid var(--border-strong);border-radius:999px;overflow:hidden;background:var(--input-bg)}
+.segmented .seg{border:0;background:transparent;color:var(--muted);font-family:var(--sans);font-size:13.5px;font-weight:500;padding:9px 18px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.segmented .seg .material-symbols-outlined{font-size:18px}
+.segmented .seg.active{background:var(--sw-blue);color:#fff}
+.segmented .seg:not(.active):hover{color:var(--fg)}
+.modehint{color:var(--muted);font-size:12px;margin-top:7px}
 .history{font-family:var(--mono);font-size:12.5px;max-height:210px;overflow:auto}
 .history .row{display:flex;gap:10px;padding:3px 0;border-bottom:1px solid var(--border)}
 .history .n{color:var(--muted);min-width:2.5ch;text-align:right}
@@ -278,6 +284,14 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
             <button id="resignBtn" class="btn btn-text btn-danger" disabled><span class="material-symbols-outlined">flag</span> Resign</button>
           </div>
           <div class="field">
+            <label>Mode</label>
+            <div class="segmented" id="modeToggle">
+              <button type="button" class="seg active" data-mode="game"><span class="material-symbols-outlined">sports_esports</span> Game</button>
+              <button type="button" class="seg" data-mode="learn"><span class="material-symbols-outlined">school</span> Learn</button>
+            </div>
+            <div class="modehint" id="modeHint">Play a normal game against Sigmond.</div>
+          </div>
+          <div class="field">
             <div class="selrow">
               <div style="flex:1"><label>Difficulty</label>
                 <select id="difficulty">
@@ -338,6 +352,6 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
 })();
 </script>
 <script src="signalwire.js"></script>
-<script src="app.js?v=9"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

@@ -345,12 +345,13 @@ def db_leaderboard():
     return {"players": players, "sigmond": sig, "updated": time.time()}
 
 
-def _new_state(difficulty="medium", player_color="white", player_name=""):
+def _new_state(difficulty="medium", player_color="white", player_name="", mode="game"):
     return {
         "fen": START_FEN,
         "difficulty": difficulty if difficulty in DIFFICULTY else "medium",
         "player_color": "black" if str(player_color).lower().startswith("b") else "white",
         "player_name": (player_name or "").strip()[:32],
+        "mode": "learn" if str(mode).lower().startswith("learn") else "game",
         "history": [],               # SAN strings, in order
         "captured_by_white": [],     # piece symbols White has captured (Black's lost pieces)
         "captured_by_black": [],
@@ -359,9 +360,9 @@ def _new_state(difficulty="medium", player_color="white", player_name=""):
     }
 
 
-def create_game(difficulty="medium", player_color="white", player_name=""):
+def create_game(difficulty="medium", player_color="white", player_name="", mode="game"):
     gid = uuid.uuid4().hex[:12]
-    st = _new_state(difficulty, player_color, player_name)
+    st = _new_state(difficulty, player_color, player_name, mode)
     with GAMES_LOCK:
         GAMES[gid] = st
         _LAST_GAME_ID["id"] = gid
@@ -384,6 +385,25 @@ def resolve_player_name(raw_data):
             if cand:
                 break
     return (cand or "").strip()[:32]
+
+
+def resolve_mode(raw_data):
+    """Pull the game mode ('game' or 'learn') from global_data / userVariables."""
+    rd = raw_data or {}
+    gd = rd.get("global_data") or {}
+    cand = gd.get("mode") or rd.get("mode")
+    if not cand:
+        for holder in (rd, gd):
+            for k in ("vars", "userVariables", "meta_data", "params"):
+                v = holder.get(k) if isinstance(holder, dict) else None
+                if isinstance(v, dict) and v.get("mode"):
+                    cand = v["mode"]
+                    break
+            if cand:
+                break
+    if not cand:
+        return None   # not specified -> caller keeps the game's existing mode
+    return "learn" if str(cand).lower().startswith("learn") else "game"
 
 
 def resolve_game_id(raw_data):
@@ -423,6 +443,89 @@ def engine_reply(board, level):
             return None
         caps = [m for m in legal if board.is_capture(m)]
         return _r.choice(caps or legal)
+
+
+ANALYSIS_TIME = float(os.environ.get("CHESS_ANALYSIS_TIME", "0.35"))  # seconds per analyse
+
+
+def _pov_cp(score, color):
+    """Centipawns from `color`'s perspective; mate mapped to a large magnitude."""
+    s = score.pov(color)
+    if s.is_mate():
+        m = s.mate() or 0
+        return (30000 - abs(m) * 10) * (1 if m > 0 else -1)
+    return s.score() or 0
+
+
+def best_moves(fen, n=3):
+    """Top-n candidate moves for the side to move: list of (san, cp)."""
+    try:
+        board = chess.Board(fen)
+        if board.is_game_over():
+            return []
+        with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as eng:
+            info = eng.analyse(board, chess.engine.Limit(time=ANALYSIS_TIME), multipv=n)
+        info = info if isinstance(info, list) else [info]
+        return [(board.san(i["pv"][0]), _pov_cp(i["score"], board.turn)) for i in info if i.get("pv")]
+    except Exception:
+        return []
+
+
+def analyze_move(fen_before, played_uci):
+    """Grade the played move against the engine's best. Returns a dict or None.
+    grade ∈ {best, good, inaccuracy, mistake, blunder}; delta is centipawns lost."""
+    try:
+        board = chess.Board(fen_before)
+        played = chess.Move.from_uci(played_uci)
+        if played not in board.legal_moves:
+            return None
+        mover = board.turn
+        played_san = board.san(played)
+        with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as eng:
+            info = eng.analyse(board, chess.engine.Limit(time=ANALYSIS_TIME), multipv=3)
+            info = info if isinstance(info, list) else [info]
+            best_move = info[0]["pv"][0]
+            best_cp = _pov_cp(info[0]["score"], mover)
+            best_san = board.san(best_move)
+            tops = [(board.san(i["pv"][0]), _pov_cp(i["score"], mover)) for i in info if i.get("pv")]
+            after = board.copy(); after.push(played)
+            if after.is_game_over():
+                played_cp = _pov_cp(chess.engine.PovScore(chess.engine.Mate(0), after.turn) if after.is_checkmate()
+                                    else chess.engine.PovScore(chess.engine.Cp(0), after.turn), mover)
+            else:
+                info2 = eng.analyse(after, chess.engine.Limit(time=ANALYSIS_TIME))
+                played_cp = -_pov_cp(info2["score"], after.turn)   # negate: opponent POV -> mover POV
+        delta = max(0, best_cp - played_cp)
+        if played.uci() == best_move.uci() or delta <= 15:
+            grade = "best"
+        elif delta <= 60:
+            grade = "good"
+        elif delta <= 130:
+            grade = "inaccuracy"
+        elif delta <= 300:
+            grade = "mistake"
+        else:
+            grade = "blunder"
+        return {"played_san": played_san, "best_san": best_san, "grade": grade,
+                "delta": delta, "tops": tops}
+    except Exception:
+        return None
+
+
+def coach_note(fen_before, played_uci):
+    """A concise coaching instruction for Sigmond to deliver, or None."""
+    a = analyze_move(fen_before, played_uci)
+    if not a:
+        return None
+    ps, bs, g = a["played_san"], a["best_san"], a["grade"]
+    if g == "best":
+        return (f"COACHING (learn mode): the player's move {ps} is the engine's top choice — excellent. "
+                "Praise it warmly and in one sentence say why it's strong.")
+    label = {"good": "a solid move", "inaccuracy": "a slight inaccuracy",
+             "mistake": "a mistake", "blunder": "a blunder"}[g]
+    return (f"COACHING (learn mode): the player's move {ps} is {label} (about {a['delta']} centipoints "
+            f"worse than best). The stronger move was {bs}. Kindly point this out, explain in one short "
+            f"sentence what {bs} achieves that {ps} misses, and encourage them.")
 
 
 def parse_move(board, text):
@@ -564,6 +667,10 @@ def do_player_then_engine(state, move_text, source="voice", game_id=None):
 
     narrate = (source == "voice")
     ucis = [move.uci()]
+    # Learn mode: grade the player's move (Stockfish) so Sigmond can coach it. Stored on
+    # the state so make_move (voice) or check_board_moves (click) can deliver it.
+    if state.get("mode") == "learn":
+        state["pending_coach"] = coach_note(fen_before, move.uci())
     human_san = apply_move(state, board, move, game_id, source, narrated=narrate)
     msg = f"You played {human_san}. "
 
@@ -629,9 +736,14 @@ class ChessOpponent(AgentBase):
                 "THEREFORE: any time the player is not speaking - after you finish talking, and repeatedly during every quiet moment - call check_board_moves. This is the one function you should call proactively without being asked. Keep calling it again and again while it is the player's turn; never assume the board hasn't changed.",
                 "If check_board_moves returns new moves, acknowledge the PLAYER's move and comment on the position - but do NOT call make_move for them (they are already applied). If it returns nothing, that's fine - just call check_board_moves again on the next quiet moment. Do not go idle.",
                 "If the board ever seems ahead of you, call get_board to resync before commenting.",
+                "LEARN MODE: some games are coaching sessions. When they are, the make_move and "
+                "check_board_moves results include a 'COACHING (learn mode)' note grading the player's "
+                "move and naming a stronger option — deliver that note warmly and briefly as their coach. "
+                "If the player asks for a hint or 'what should I play?', call hint and suggest the move "
+                "without playing it for them. In normal Game mode you will get no coaching notes — just play.",
             ]) \
             .set_step_criteria("The game has ended (checkmate, stalemate, draw, or resignation).") \
-            .set_functions(["make_move", "check_board_moves", "new_game", "change_difficulty", "resign", "get_board", "explain_term", "end_call"]) \
+            .set_functions(["make_move", "check_board_moves", "new_game", "change_difficulty", "resign", "get_board", "explain_term", "hint", "end_call"]) \
             .set_valid_steps(["play"])
 
         self.add_language(name="English", code="en-US", voice="elevenlabs.adam")
@@ -672,6 +784,9 @@ class ChessOpponent(AgentBase):
             cid = (raw_data or {}).get("call_id")   # learn the live call so clicks can nudge it
             if cid:
                 st["call_id"] = cid
+            m = resolve_mode(raw_data)              # keep game/learn mode in sync with the client
+            if m:
+                st["mode"] = m
             return gid, st
 
         @self.tool(
@@ -691,6 +806,9 @@ class ChessOpponent(AgentBase):
         def make_move(args, raw_data):
             gid, state = _state_for(raw_data)
             ok, msg, payload = do_player_then_engine(state, args.get("move", ""), source="voice", game_id=gid)
+            coach = state.pop("pending_coach", None)   # learn-mode coaching for this move
+            if ok and coach:
+                msg = msg + " " + coach
             result = SwaigFunctionResult(msg)
             result.swml_user_event(payload)            # push the new board to the browser now
             result.enable_functions_on_timeout(True)   # keep polling for board clicks armed
@@ -726,8 +844,10 @@ class ChessOpponent(AgentBase):
                         f"and invite them to make their move.")
             else:
                 body = f"The USER moved {um} on the board. Acknowledge their move."
+            coach = state.pop("pending_coach", None)   # learn-mode coaching for the clicked move
+            coach_txt = (" " + coach) if coach else ""
             r = SwaigFunctionResult(
-                "CHESS BOARD UPDATE (not speech from the user). " + body +
+                "CHESS BOARD UPDATE (not speech from the user). " + body + coach_txt +
                 " These moves are ALREADY applied — do NOT call make_move. Never swap who made "
                 "which move (USER moves are the player's, AGENT moves are yours). "
                 "Briefly comment, then keep watching the board.")
@@ -756,7 +876,8 @@ class ChessOpponent(AgentBase):
             prev = GAMES.get(gid, {})
             diff = prev.get("difficulty", "medium")
             name = prev.get("player_name") or resolve_player_name(raw_data)
-            state = _new_state(diff, color, name)
+            mode = resolve_mode(raw_data) or prev.get("mode", "game")
+            state = _new_state(diff, color, name, mode)
             if not gid:
                 gid = uuid.uuid4().hex[:12]
             with GAMES_LOCK:
@@ -878,6 +999,30 @@ class ChessOpponent(AgentBase):
             return SwaigFunctionResult(
                 "I'm not sure of that exact term, but ask me about castling, en passant, "
                 "check, pins, forks, or promotion.")
+
+        @self.tool(
+            name="hint",
+            description="Suggest a strong move for the PLAYER to consider. Use in Learn mode or "
+                        "whenever the player asks 'what should I play?', 'give me a hint', or for advice.",
+            parameters={"type": "object", "properties": {}, "required": []},
+        )
+        def hint(args, raw_data):
+            gid, state = _state_for(raw_data)
+            board = chess.Board(state["fen"])
+            your_turn = (board.turn == chess.WHITE) == (state["player_color"] == "white")
+            if board.is_game_over():
+                return SwaigFunctionResult("The game is over — nothing to suggest. Start a new game to play on.")
+            if not your_turn:
+                return SwaigFunctionResult("It's my move right now — I'll play, then I can suggest your reply.")
+            tops = best_moves(state["fen"], 3)
+            if not tops:
+                return SwaigFunctionResult("Let me look at the board — try again in a moment.")
+            best = tops[0][0]
+            alts = ", ".join(s for s, _cp in tops[1:3])
+            extra = f" Other reasonable tries: {alts}." if alts else ""
+            return SwaigFunctionResult(
+                f"HINT: a strong move here is {best}.{extra} Suggest {best} to the player and explain "
+                "in one short sentence why it's a good idea — but let THEM make the move.")
 
 HOST = "0.0.0.0"
 PORT = int(os.environ.get('PORT', 5000))
@@ -1126,9 +1271,9 @@ def create_server(port=None):
 
     # ── Interactive-board REST API (shares the GAMES store with the voice path) ──
     @server.app.post('/chess/new')
-    def chess_new(difficulty: str = "medium", player_color: str = "white", player_name: str = ""):
+    def chess_new(difficulty: str = "medium", player_color: str = "white", player_name: str = "", mode: str = "game"):
         """Create a game for the on-screen board; returns game_id + initial board."""
-        gid, state = create_game(difficulty, player_color, player_name)
+        gid, state = create_game(difficulty, player_color, player_name, mode)
         board = chess.Board(state["fen"])
         last = None
         if state["player_color"] == "black":

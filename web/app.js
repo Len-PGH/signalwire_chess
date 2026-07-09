@@ -11,6 +11,7 @@ let gameId = null;
 let board = null;          // last board_update payload
 let selected = null;       // selected square (algebraic) awaiting a target
 let isMuted = false, teardownDone = false, busy = false;
+let mode = (localStorage.getItem('chessMode') === 'learn') ? 'learn' : 'game';  // 'game' | 'learn'
 
 // U+FE0E (text variation selector) forces monochrome TEXT rendering — without it,
 // mobile browsers (iOS/Android) draw these as emoji, which resize squares and can
@@ -27,6 +28,7 @@ const historyEl = $('history'), logEl = $('log'), bannerEl = $('banner');
 const connectBtn = $('connectBtn'), hangupBtn = $('hangupBtn'), muteBtn = $('muteBtn');
 const newBtn = $('newBtn'), resignBtn = $('resignBtn');
 const difficultySel = $('difficulty'), colorSel = $('color');
+const modeToggle = $('modeToggle'), modeHint = $('modeHint');
 const connChip = $('connChip');
 const nameChip = $('nameChip'), nameLabel = $('nameLabel'), nameAvatar = $('nameAvatar');
 const nameDialog = $('nameDialog'), nameInput = $('nameInput'), nameSave = $('nameSave'), nameSkip = $('nameSkip');
@@ -73,7 +75,7 @@ let newGameSeq = 0;
 async function newGame() {
   const seq = ++newGameSeq;   // guards against a slower earlier new-game clobbering a newer one
   const difficulty = difficultySel.value, player_color = colorSel.value;
-  const j = await api(`/chess/new?difficulty=${encodeURIComponent(difficulty)}&player_color=${encodeURIComponent(player_color)}&player_name=${encodeURIComponent(getPlayerName())}`, { method: 'POST' });
+  const j = await api(`/chess/new?difficulty=${encodeURIComponent(difficulty)}&player_color=${encodeURIComponent(player_color)}&player_name=${encodeURIComponent(getPlayerName())}&mode=${encodeURIComponent(mode)}`, { method: 'POST' });
   if (seq !== newGameSeq) return;   // a newer newGame() started; discard this stale result
   gameId = j.game_id;
   selected = null;
@@ -366,7 +368,7 @@ async function connectToCall() {
     connEl.textContent = 'dialing';
     call = await client.dial(currentDestination, {
       audio: true, video: false, receiveAudio: true, receiveVideo: true,
-      userVariables: { game_id: gameId, player_name: getPlayerName(), interface: 'chess-web' }
+      userVariables: { game_id: gameId, player_name: getPlayerName(), mode: mode, interface: 'chess-web' }
     });
 
     subscriptions.push(call.remoteStream$.subscribe(stream => attachRemoteStream(stream)));
@@ -460,6 +462,21 @@ difficultySel.addEventListener('change', () => { levelEl.textContent = difficult
 colorSel.addEventListener('change', () => {
   if (!call && board) { board.player_color = colorSel.value; selected = null; renderBoard(board); }
 });
+
+// ---- mode (Game | Learn) — a pre-game setting applied at Connect ----
+function applyMode() {
+  [...modeToggle.querySelectorAll('.seg')].forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  modeHint.textContent = (mode === 'learn')
+    ? 'Sigmond coaches you: grades each of your moves and suggests better ones. Ask for a hint anytime.'
+    : 'Play a normal game against Sigmond.';
+}
+modeToggle.addEventListener('click', e => {
+  const btn = e.target.closest('.seg'); if (!btn) return;
+  mode = btn.dataset.mode === 'learn' ? 'learn' : 'game';
+  localStorage.setItem('chessMode', mode);
+  applyMode();
+});
+applyMode();
 
 // ---- name capture ----
 nameChip.addEventListener('click', openNameDialog);
