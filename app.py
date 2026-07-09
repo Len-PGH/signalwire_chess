@@ -985,6 +985,7 @@ class ChessOpponent(AgentBase):
         def end_call(args, raw_data):
             _state_for(raw_data)   # capture call context if present
             result = SwaigFunctionResult("Thanks for playing! Good game — hanging up now. Goodbye.")
+            result.swml_user_event({"type": "call_ended", "reason": "agent"})  # client: do NOT auto-reconnect
             result.hangup()
             return result
 

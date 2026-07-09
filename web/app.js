@@ -373,73 +373,131 @@ async function fetchGuestToken() {
   return data;
 }
 
+let intentionalEnd = false;   // user pressed Hang up, or Sigmond ended the call for real
+let wasConnected = false;     // did we ever reach 'connected' this session?
+let reconnectAttempts = 0;
+const MAX_RECONNECT = 3;
+
 async function connectToCall() {
-  teardownDone = false;
+  teardownDone = false; intentionalEnd = false; wasConnected = false; reconnectAttempts = 0;
   try {
     connectBtn.disabled = true; connectBtn.innerHTML = '<span class="material-symbols-outlined">hourglass_top</span> Connecting…';
     connEl.textContent = 'requesting mic';
     await ensureMicrophone();
-
-    // Start a fresh game reflecting the chosen color/difficulty. This is where the
-    // game actually begins (and where the engine opens if you picked Black) — never
-    // before Connect is pressed. Pre-connect the board is only a preview.
+    // Start a fresh game reflecting the chosen color/difficulty. This is where the game
+    // actually begins (engine opens if Black) — never before Connect. Pre-connect the
+    // board is only a preview.
     connEl.textContent = 'starting game';
     await newGame();
-    await attributeGame();   // make sure this game is tagged with your name before play
-
-    connEl.textContent = 'getting token';
-    const td = await fetchGuestToken();
-    currentToken = td.token; currentDestination = td.address; agentAddressId = td.address_id || null;
-
-    const SW = window.SignalWire || SignalWire;
-    if (!SW || typeof SW.SignalWire !== 'function') throw new Error('SignalWire v4 SDK not loaded');
-
-    let used = false;
-    const credentialProvider = { authenticate: async () => {
-      if (!used) { used = true; return { token: currentToken }; }
-      const fresh = await fetchGuestToken(); currentToken = fresh.token; currentDestination = fresh.address; return { token: currentToken };
-    }};
-
-    connEl.textContent = 'connecting';
-    client = new SW.SignalWire(credentialProvider);
-    subscriptions.push(client.warnings$.subscribe(w => { if (w?.code !== 'credential_refresh_fallback') logEvent('SDK warning', { code: w?.code }); }));
-    subscriptions.push(client.errors$.subscribe(e => logEvent('SDK error', { code: e?.code, message: e?.message })));
-
-    await new Promise((resolve, reject) => {
-      let settled = false;
-      const timer = setTimeout(() => { if (!settled) { settled = true; reject(new Error('connection timed out')); } }, 15000);
-      const sub = client.isConnected$.subscribe(c => { if (c && !settled) { settled = true; clearTimeout(timer); setTimeout(() => sub.unsubscribe(), 0); resolve(); } });
-    });
-
-    connEl.textContent = 'dialing';
-    call = await client.dial(currentDestination, {
-      audio: true, video: false, receiveAudio: true, receiveVideo: true,
-      userVariables: { game_id: gameId, player_name: getPlayerName(), mode: mode, interface: 'chess-web' }
-    });
-
-    subscriptions.push(call.remoteStream$.subscribe(stream => attachRemoteStream(stream)));
-    subscriptions.push(call.subscribe('user_event').subscribe(evt => {
-      const payload = (evt && evt.params !== undefined) ? evt.params : evt;
-      if (payload && payload.type === 'board_update') { selected = null; renderBoard(payload); }
-      logEvent('user_event', payload && payload.type);
-    }));
-    subscriptions.push(call.status$.subscribe({ next: st => {
-      logEvent('call.status', { status: st });
-      if (st === 'connected') {
-        connEl.textContent = 'connected';
-        connChip.classList.add('live');
-        connectBtn.style.display = 'none';
-        hangupBtn.style.display = 'inline-flex';
-        muteBtn.style.display = 'inline-grid';
-        renderBoard(board); // re-render to enable interactivity now that call exists
-      } else if (['disconnected','failed','destroyed'].includes(st)) handleDisconnect();
-    }}));
+    await attributeGame();   // tag this game with the player's name before play
+    await openCall();
   } catch (e) {
     logEvent('Connection error', { error: e.message });
     connEl.textContent = 'failed: ' + e.message;
-    connectBtn.disabled = false; connectBtn.innerHTML = '<span class="material-symbols-outlined">mic</span> Connect &amp; Play';
-    handleDisconnect();
+    finalTeardown();
   }
+}
+
+// Establish (or re-establish) the SignalWire client + call for the CURRENT gameId.
+// Shared by the initial connect and by auto-reconnect (never creates a new game).
+async function openCall() {
+  connEl.textContent = 'getting token';
+  const td = await fetchGuestToken();
+  currentToken = td.token; currentDestination = td.address; agentAddressId = td.address_id || null;
+
+  const SW = window.SignalWire || SignalWire;
+  if (!SW || typeof SW.SignalWire !== 'function') throw new Error('SignalWire v4 SDK not loaded');
+
+  let used = false;
+  const credentialProvider = { authenticate: async () => {
+    if (!used) { used = true; return { token: currentToken }; }
+    const fresh = await fetchGuestToken(); currentToken = fresh.token; currentDestination = fresh.address; return { token: currentToken };
+  }};
+
+  connEl.textContent = 'connecting';
+  client = new SW.SignalWire(credentialProvider);
+  subscriptions.push(client.warnings$.subscribe(w => { if (w?.code !== 'credential_refresh_fallback') logEvent('SDK warning', { code: w?.code }); }));
+  subscriptions.push(client.errors$.subscribe(e => logEvent('SDK error', { code: e?.code, message: e?.message })));
+
+  await new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => { if (!settled) { settled = true; reject(new Error('connection timed out')); } }, 15000);
+    const sub = client.isConnected$.subscribe(c => { if (c && !settled) { settled = true; clearTimeout(timer); setTimeout(() => sub.unsubscribe(), 0); resolve(); } });
+  });
+
+  connEl.textContent = 'dialing';
+  call = await client.dial(currentDestination, {
+    audio: true, video: false, receiveAudio: true, receiveVideo: true,
+    userVariables: { game_id: gameId, player_name: getPlayerName(), mode: mode, interface: 'chess-web' }
+  });
+
+  subscriptions.push(call.remoteStream$.subscribe(stream => attachRemoteStream(stream)));
+  subscriptions.push(call.subscribe('user_event').subscribe(evt => {
+    const payload = (evt && evt.params !== undefined) ? evt.params : evt;
+    if (payload && payload.type === 'call_ended') intentionalEnd = true;   // agent ended -> no reconnect
+    else if (payload && payload.type === 'board_update') { selected = null; renderBoard(payload); }
+    logEvent('user_event', payload && payload.type);
+  }));
+  subscriptions.push(call.status$.subscribe({ next: st => {
+    logEvent('call.status', { status: st });
+    if (st === 'connected') {
+      wasConnected = true; reconnectAttempts = 0;
+      connEl.textContent = 'connected';
+      connChip.classList.add('live');
+      connectBtn.style.display = 'none';
+      hangupBtn.style.display = 'inline-flex';
+      muteBtn.style.display = 'inline-grid';
+      renderBoard(board); // re-render to enable interactivity now that call exists
+    } else if (['disconnected', 'failed', 'destroyed'].includes(st)) handleDisconnect();
+  }}));
+}
+
+// Quietly drop the current client/call (no UI reset) — used before a reconnect attempt.
+function cleanupCall() {
+  subscriptions.forEach(s => { try { s.unsubscribe(); } catch (_) {} });
+  subscriptions = [];
+  try { if (call) call.hangup(); } catch (_) {}
+  try { if (client) client.disconnect(); } catch (_) {}
+  call = null; client = null;
+}
+
+// Auto-reconnect after an UNEXPECTED drop — resumes the SAME game (server-side state).
+async function reconnect() {
+  reconnectAttempts++;
+  connChip.classList.remove('live');
+  connEl.textContent = `reconnecting… (${reconnectAttempts}/${MAX_RECONNECT})`;
+  logEvent('Connection dropped — reconnecting', { attempt: reconnectAttempts });
+  cleanupCall();
+  try {
+    await openCall();   // same gameId, no new game
+  } catch (e) {
+    logEvent('Reconnect attempt failed', { error: e.message });
+    if (reconnectAttempts >= MAX_RECONNECT) finalTeardown();
+    else setTimeout(reconnect, 1200 * reconnectAttempts);
+  }
+}
+
+// On disconnect: reconnect only if it was UNEXPECTED (not user Hang up, not Sigmond's
+// end_call, not a failed initial connect, and within the retry budget); else tear down.
+function handleDisconnect() {
+  if (teardownDone) return;
+  if (!intentionalEnd && wasConnected && reconnectAttempts < MAX_RECONNECT) {
+    reconnect();
+    return;
+  }
+  finalTeardown();
+}
+
+function finalTeardown() {
+  if (teardownDone) return; teardownDone = true;
+  cleanupCall();
+  if (remoteVideoEl && remoteVideoEl.srcObject) { try { remoteVideoEl.srcObject.getTracks().forEach(t => t.stop()); } catch (_) {} }
+  connEl.textContent = 'disconnected';
+  connChip.classList.remove('live');
+  connectBtn.style.display = 'inline-flex'; connectBtn.disabled = false;
+  connectBtn.innerHTML = '<span class="material-symbols-outlined">mic</span> Connect &amp; Play';
+  hangupBtn.style.display = 'none'; muteBtn.style.display = 'none';
+  if (board) renderBoard(board);
 }
 
 let remoteVideoEl = null, lastSig = '';
@@ -458,22 +516,6 @@ function attachRemoteStream(stream) {
   remoteVideoEl.play().catch(() => {});
 }
 
-function handleDisconnect() {
-  if (teardownDone) return; teardownDone = true;
-  subscriptions.forEach(s => { try { s.unsubscribe(); } catch (_) {} });
-  subscriptions = [];
-  if (remoteVideoEl && remoteVideoEl.srcObject) { try { remoteVideoEl.srcObject.getTracks().forEach(t => t.stop()); } catch (_) {} }
-  try { if (call) call.hangup(); } catch (_) {}
-  try { if (client) client.disconnect(); } catch (_) {}
-  call = null;
-  connEl.textContent = 'disconnected';
-  connChip.classList.remove('live');
-  connectBtn.style.display = 'inline-flex'; connectBtn.disabled = false;
-  connectBtn.innerHTML = '<span class="material-symbols-outlined">mic</span> Connect &amp; Play';
-  hangupBtn.style.display = 'none'; muteBtn.style.display = 'none';
-  if (board) renderBoard(board);
-}
-
 async function toggleMute() {
   try {
     if (call && call.self && typeof call.self.mute === 'function') {
@@ -487,7 +529,7 @@ async function toggleMute() {
 
 // ---- wire up controls ----
 connectBtn.addEventListener('click', connectToCall);
-hangupBtn.addEventListener('click', handleDisconnect);
+hangupBtn.addEventListener('click', () => { intentionalEnd = true; finalTeardown(); });
 muteBtn.addEventListener('click', toggleMute);
 newBtn.addEventListener('click', () => newGame().catch(e => logEvent('new game error', { error: e.message })));
 resignBtn.addEventListener('click', async () => {
