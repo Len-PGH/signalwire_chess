@@ -149,6 +149,14 @@ h1,h2,.brand{font-family:var(--heading);letter-spacing:-.01em}
 .boardframe{--gut:22px;position:relative;margin:10px 0;padding:var(--gut);
   background:var(--raised);border:1px solid var(--border);border-radius:14px;box-shadow:var(--e2)}
 .boardframe .board{width:100%;aspect-ratio:1/1;margin:0;box-shadow:none;border-radius:6px}
+/* Learn-mode eval bar (left of board) + best-move arrow overlay */
+.boardrow{display:flex;gap:10px;align-items:stretch;margin:10px 0}
+.boardrow .boardframe{flex:1;margin:0}
+.evalbar{width:16px;flex:none;position:relative;border-radius:8px;overflow:hidden;background:#26303b;border:1px solid var(--border);display:none}
+.evalfill{position:absolute;left:0;right:0;bottom:0;height:50%;background:#eef2f8;transition:height .45s ease}
+.arrows{position:absolute;inset:var(--gut);pointer-events:none;z-index:5}
+.arrows line{stroke:var(--sw-turq);stroke-width:.26;stroke-linecap:round;opacity:.9}
+.arrows .ah{fill:var(--sw-turq);opacity:.9}
 .coord-row{position:absolute;left:var(--gut);right:var(--gut);height:var(--gut);display:grid;grid-template-columns:repeat(8,1fr)}
 .coord-col{position:absolute;top:var(--gut);bottom:var(--gut);width:var(--gut);display:grid;grid-template-rows:repeat(8,1fr)}
 #files-top{top:0} #files-bottom{bottom:0}
@@ -160,6 +168,10 @@ h1,h2,.brand{font-family:var(--heading);letter-spacing:-.01em}
 .banner.show{display:flex}
 .banner.check{background:color-mix(in srgb,var(--sw-gold) 16%,transparent);color:var(--sw-gold);border:1px solid color-mix(in srgb,var(--sw-gold) 30%,transparent)}
 .banner.over{background:var(--tonal-bg);color:var(--tonal-fg);border:1px solid var(--border)}
+.banner.reconnect{background:color-mix(in srgb,var(--sw-gold) 16%,transparent);color:var(--sw-gold);border:1px solid color-mix(in srgb,var(--sw-gold) 32%,transparent)}
+.banner.reconnect .material-symbols-outlined{color:var(--sw-gold);font-size:19px}
+.spin{display:inline-flex;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 
 /* side */
 #video-container{position:relative;width:100%;aspect-ratio:16/9;background:#0b0b14;border-radius:12px;overflow:hidden;margin-bottom:14px;display:none}
@@ -173,6 +185,12 @@ h1,h2,.brand{font-family:var(--heading);letter-spacing:-.01em}
 select{flex:1;font-family:var(--sans);font-size:14px;background:var(--input-bg);color:var(--fg);
   border:1px solid var(--border-strong);border-radius:10px;padding:11px 12px;cursor:pointer}
 select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(4,78,244,.3)}
+.segmented{display:inline-flex;border:1px solid var(--border-strong);border-radius:999px;overflow:hidden;background:var(--input-bg)}
+.segmented .seg{border:0;background:transparent;color:var(--muted);font-family:var(--sans);font-size:13.5px;font-weight:500;padding:9px 18px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.segmented .seg .material-symbols-outlined{font-size:18px}
+.segmented .seg.active{background:var(--sw-blue);color:#fff}
+.segmented .seg:not(.active):hover{color:var(--fg)}
+.modehint{color:var(--muted);font-size:12px;margin-top:7px}
 .history{font-family:var(--mono);font-size:12.5px;max-height:210px;overflow:auto}
 .history .row{display:flex;gap:10px;padding:3px 0;border-bottom:1px solid var(--border)}
 .history .n{color:var(--muted);min-width:2.5ch;text-align:right}
@@ -243,20 +261,26 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
     <div class="chip"><span class="k">Turn</span><span class="v" id="turn">—</span></div>
     <div class="chip"><span class="k">Level</span><span class="v" id="level">medium</span></div>
     <div class="chip"><span class="k">Material</span><span class="v" id="material">even</span></div>
+    <div class="chip" id="evalChip" style="display:none"><span class="k">Eval</span><span class="v" id="evalVal">—</span></div>
   </div>
 
   <div class="layout">
     <div class="card boardcard">
       <div class="hd"><span class="material-symbols-outlined">grid_on</span><h2>BOARD</h2></div>
       <div class="bd">
+        <div class="banner reconnect" id="reconnectBanner"><span class="material-symbols-outlined spin">autorenew</span><span id="reconnectText">Reconnecting…</span></div>
         <div class="banner" id="banner"></div>
         <div class="tray" id="tray-top"><span class="lbl">Captured</span></div>
-        <div class="boardframe">
-          <div class="coord-row" id="files-top"></div>
-          <div class="coord-col" id="ranks-left"></div>
-          <div class="board" id="board"></div>
-          <div class="coord-col" id="ranks-right"></div>
-          <div class="coord-row" id="files-bottom"></div>
+        <div class="boardrow">
+          <div class="evalbar" id="evalbar"><div class="evalfill" id="evalfill"></div></div>
+          <div class="boardframe">
+            <div class="coord-row" id="files-top"></div>
+            <div class="coord-col" id="ranks-left"></div>
+            <div class="board" id="board"></div>
+            <div class="coord-col" id="ranks-right"></div>
+            <div class="coord-row" id="files-bottom"></div>
+            <svg class="arrows" id="arrows" viewBox="0 0 8 8" preserveAspectRatio="none" aria-hidden="true"></svg>
+          </div>
         </div>
         <div class="tray" id="tray-bottom"><span class="lbl">Captured</span></div>
         <div class="hint">Click one of your pieces to see its legal moves, then a highlighted square — or just say the move out loud.</div>
@@ -276,6 +300,14 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
           <div class="controls" style="margin-top:12px">
             <button id="newBtn" class="btn btn-tonal" disabled><span class="material-symbols-outlined">refresh</span> New game</button>
             <button id="resignBtn" class="btn btn-text btn-danger" disabled><span class="material-symbols-outlined">flag</span> Resign</button>
+          </div>
+          <div class="field">
+            <label>Mode</label>
+            <div class="segmented" id="modeToggle">
+              <button type="button" class="seg active" data-mode="game"><span class="material-symbols-outlined">sports_esports</span> Game</button>
+              <button type="button" class="seg" data-mode="learn"><span class="material-symbols-outlined">school</span> Learn</button>
+            </div>
+            <div class="modehint" id="modeHint">Play a normal game against Sigmond.</div>
           </div>
           <div class="field">
             <div class="selrow">
@@ -338,6 +370,6 @@ select:focus{outline:none;border-color:var(--sw-blue);box-shadow:0 0 0 3px rgba(
 })();
 </script>
 <script src="signalwire.js"></script>
-<script src="app.js?v=9"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

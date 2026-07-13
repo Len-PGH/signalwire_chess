@@ -11,6 +11,7 @@ let gameId = null;
 let board = null;          // last board_update payload
 let selected = null;       // selected square (algebraic) awaiting a target
 let isMuted = false, teardownDone = false, busy = false;
+let mode = (localStorage.getItem('chessMode') === 'learn') ? 'learn' : 'game';  // 'game' | 'learn'
 
 // U+FE0E (text variation selector) forces monochrome TEXT rendering — without it,
 // mobile browsers (iOS/Android) draw these as emoji, which resize squares and can
@@ -24,9 +25,12 @@ const filesTop = $('files-top'), filesBottom = $('files-bottom'), ranksLeft = $(
 const trayTop = $('tray-top'), trayBottom = $('tray-bottom');
 const connEl = $('conn'), turnEl = $('turn'), levelEl = $('level'), matEl = $('material');
 const historyEl = $('history'), logEl = $('log'), bannerEl = $('banner');
+const reconnectBanner = $('reconnectBanner'), reconnectText = $('reconnectText');
 const connectBtn = $('connectBtn'), hangupBtn = $('hangupBtn'), muteBtn = $('muteBtn');
 const newBtn = $('newBtn'), resignBtn = $('resignBtn');
 const difficultySel = $('difficulty'), colorSel = $('color');
+const modeToggle = $('modeToggle'), modeHint = $('modeHint');
+const evalbar = $('evalbar'), evalfill = $('evalfill'), arrows = $('arrows'), evalChip = $('evalChip'), evalVal = $('evalVal');
 const connChip = $('connChip');
 const nameChip = $('nameChip'), nameLabel = $('nameLabel'), nameAvatar = $('nameAvatar');
 const nameDialog = $('nameDialog'), nameInput = $('nameInput'), nameSave = $('nameSave'), nameSkip = $('nameSkip');
@@ -73,7 +77,7 @@ let newGameSeq = 0;
 async function newGame() {
   const seq = ++newGameSeq;   // guards against a slower earlier new-game clobbering a newer one
   const difficulty = difficultySel.value, player_color = colorSel.value;
-  const j = await api(`/chess/new?difficulty=${encodeURIComponent(difficulty)}&player_color=${encodeURIComponent(player_color)}&player_name=${encodeURIComponent(getPlayerName())}`, { method: 'POST' });
+  const j = await api(`/chess/new?difficulty=${encodeURIComponent(difficulty)}&player_color=${encodeURIComponent(player_color)}&player_name=${encodeURIComponent(getPlayerName())}&mode=${encodeURIComponent(mode)}`, { method: 'POST' });
   if (seq !== newGameSeq) return;   // a newer newGame() started; discard this stale result
   gameId = j.game_id;
   selected = null;
@@ -227,6 +231,51 @@ function renderBoard(p) {
   resignBtn.disabled = !gameId || p.game_over;
 
   playMoveGif(p);
+  updateAnalysis(p);   // learn-mode eval bar + best-move arrow (no-op in game mode)
+}
+
+// ---- Learn-mode eval bar + best-move arrow (fed by /chess/analysis) ----
+let analysisSeq = 0;
+function sqToXY(sq, flip) {            // 'e2' -> [x,y] in the board's 0..8 space
+  const f = sq.charCodeAt(0) - 97, r = parseInt(sq[1], 10);
+  const col = flip ? 7 - f : f;
+  const rowFromTop = flip ? r - 1 : 8 - r;
+  return [col + 0.5, rowFromTop + 0.5];
+}
+function clearArrow() { arrows.innerHTML = ''; }
+function drawArrow(from, to) {
+  const [x1, y1] = from, [x2, y2] = to;
+  const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+  const head = 0.6, w = 0.34;
+  const bx = x2 - ux * head, by = y2 - uy * head, px = -uy * w, py = ux * w;
+  arrows.innerHTML =
+    `<line x1="${x1}" y1="${y1}" x2="${bx.toFixed(3)}" y2="${by.toFixed(3)}"></line>` +
+    `<polygon class="ah" points="${x2},${y2} ${(bx + px).toFixed(3)},${(by + py).toFixed(3)} ${(bx - px).toFixed(3)},${(by - py).toFixed(3)}"></polygon>`;
+}
+function hideAnalysis() { evalbar.style.display = 'none'; evalChip.style.display = 'none'; clearArrow(); }
+async function updateAnalysis(p) {
+  if (mode !== 'learn' || !gameId) { hideAnalysis(); return; }
+  const seq = ++analysisSeq;
+  evalbar.style.display = 'block';
+  let a;
+  try { a = await api(`/chess/analysis?game_id=${encodeURIComponent(gameId)}`); }
+  catch (e) { return; }
+  if (seq !== analysisSeq) return;                 // superseded by a newer position
+  // eval -> White's share of the bar (0..100) via a soft sigmoid
+  let whitePct = 50, label = '—';
+  if (a.mate != null) { whitePct = a.mate > 0 ? 100 : 0; label = (a.mate > 0 ? 'M' : '-M') + Math.abs(a.mate); }
+  else if (a.cp != null) { whitePct = 50 + 50 * (2 / (1 + Math.exp(-0.004 * a.cp)) - 1); label = (a.cp >= 0 ? '+' : '') + (a.cp / 100).toFixed(1); }
+  // orient the bar to the board: the player's colour sits at the bottom
+  const flip = (p.player_color === 'black');
+  if (!flip) { evalbar.style.background = '#26303b'; evalfill.style.background = '#eef2f8'; evalfill.style.height = whitePct + '%'; }
+  else { evalbar.style.background = '#eef2f8'; evalfill.style.background = '#26303b'; evalfill.style.height = (100 - whitePct) + '%'; }
+  evalChip.style.display = '';
+  evalVal.textContent = label;
+  // best-move arrow: only when it's the player's turn (so we're advising them)
+  const yourTurn = (a.turn === p.player_color);
+  if (a.best_move && yourTurn && !a.game_over && !p.game_over)
+    drawArrow(sqToXY(a.best_move.slice(0, 2), flip), sqToXY(a.best_move.slice(2, 4), flip));
+  else clearArrow();
 }
 
 // ---- per-move animated GIF overlay (server-rendered; fades back to avatar) ----
@@ -325,73 +374,137 @@ async function fetchGuestToken() {
   return data;
 }
 
+let intentionalEnd = false;   // user pressed Hang up, or Sigmond ended the call for real
+let wasConnected = false;     // did we ever reach 'connected' this session?
+let reconnectAttempts = 0;
+const MAX_RECONNECT = 3;
+
 async function connectToCall() {
-  teardownDone = false;
+  teardownDone = false; intentionalEnd = false; wasConnected = false; reconnectAttempts = 0;
   try {
     connectBtn.disabled = true; connectBtn.innerHTML = '<span class="material-symbols-outlined">hourglass_top</span> Connecting…';
     connEl.textContent = 'requesting mic';
     await ensureMicrophone();
-
-    // Start a fresh game reflecting the chosen color/difficulty. This is where the
-    // game actually begins (and where the engine opens if you picked Black) — never
-    // before Connect is pressed. Pre-connect the board is only a preview.
+    // Start a fresh game reflecting the chosen color/difficulty. This is where the game
+    // actually begins (engine opens if Black) — never before Connect. Pre-connect the
+    // board is only a preview.
     connEl.textContent = 'starting game';
     await newGame();
-    await attributeGame();   // make sure this game is tagged with your name before play
-
-    connEl.textContent = 'getting token';
-    const td = await fetchGuestToken();
-    currentToken = td.token; currentDestination = td.address; agentAddressId = td.address_id || null;
-
-    const SW = window.SignalWire || SignalWire;
-    if (!SW || typeof SW.SignalWire !== 'function') throw new Error('SignalWire v4 SDK not loaded');
-
-    let used = false;
-    const credentialProvider = { authenticate: async () => {
-      if (!used) { used = true; return { token: currentToken }; }
-      const fresh = await fetchGuestToken(); currentToken = fresh.token; currentDestination = fresh.address; return { token: currentToken };
-    }};
-
-    connEl.textContent = 'connecting';
-    client = new SW.SignalWire(credentialProvider);
-    subscriptions.push(client.warnings$.subscribe(w => { if (w?.code !== 'credential_refresh_fallback') logEvent('SDK warning', { code: w?.code }); }));
-    subscriptions.push(client.errors$.subscribe(e => logEvent('SDK error', { code: e?.code, message: e?.message })));
-
-    await new Promise((resolve, reject) => {
-      let settled = false;
-      const timer = setTimeout(() => { if (!settled) { settled = true; reject(new Error('connection timed out')); } }, 15000);
-      const sub = client.isConnected$.subscribe(c => { if (c && !settled) { settled = true; clearTimeout(timer); setTimeout(() => sub.unsubscribe(), 0); resolve(); } });
-    });
-
-    connEl.textContent = 'dialing';
-    call = await client.dial(currentDestination, {
-      audio: true, video: false, receiveAudio: true, receiveVideo: true,
-      userVariables: { game_id: gameId, player_name: getPlayerName(), interface: 'chess-web' }
-    });
-
-    subscriptions.push(call.remoteStream$.subscribe(stream => attachRemoteStream(stream)));
-    subscriptions.push(call.subscribe('user_event').subscribe(evt => {
-      const payload = (evt && evt.params !== undefined) ? evt.params : evt;
-      if (payload && payload.type === 'board_update') { selected = null; renderBoard(payload); }
-      logEvent('user_event', payload && payload.type);
-    }));
-    subscriptions.push(call.status$.subscribe({ next: st => {
-      logEvent('call.status', { status: st });
-      if (st === 'connected') {
-        connEl.textContent = 'connected';
-        connChip.classList.add('live');
-        connectBtn.style.display = 'none';
-        hangupBtn.style.display = 'inline-flex';
-        muteBtn.style.display = 'inline-grid';
-        renderBoard(board); // re-render to enable interactivity now that call exists
-      } else if (['disconnected','failed','destroyed'].includes(st)) handleDisconnect();
-    }}));
+    await attributeGame();   // tag this game with the player's name before play
+    await openCall();
   } catch (e) {
     logEvent('Connection error', { error: e.message });
     connEl.textContent = 'failed: ' + e.message;
-    connectBtn.disabled = false; connectBtn.innerHTML = '<span class="material-symbols-outlined">mic</span> Connect &amp; Play';
-    handleDisconnect();
+    finalTeardown();
   }
+}
+
+// Establish (or re-establish) the SignalWire client + call for the CURRENT gameId.
+// Shared by the initial connect and by auto-reconnect (never creates a new game).
+async function openCall() {
+  connEl.textContent = 'getting token';
+  const td = await fetchGuestToken();
+  currentToken = td.token; currentDestination = td.address; agentAddressId = td.address_id || null;
+
+  const SW = window.SignalWire || SignalWire;
+  if (!SW || typeof SW.SignalWire !== 'function') throw new Error('SignalWire v4 SDK not loaded');
+
+  let used = false;
+  const credentialProvider = { authenticate: async () => {
+    if (!used) { used = true; return { token: currentToken }; }
+    const fresh = await fetchGuestToken(); currentToken = fresh.token; currentDestination = fresh.address; return { token: currentToken };
+  }};
+
+  connEl.textContent = 'connecting';
+  client = new SW.SignalWire(credentialProvider);
+  subscriptions.push(client.warnings$.subscribe(w => { if (w?.code !== 'credential_refresh_fallback') logEvent('SDK warning', { code: w?.code }); }));
+  subscriptions.push(client.errors$.subscribe(e => logEvent('SDK error', { code: e?.code, message: e?.message })));
+
+  await new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => { if (!settled) { settled = true; reject(new Error('connection timed out')); } }, 15000);
+    const sub = client.isConnected$.subscribe(c => { if (c && !settled) { settled = true; clearTimeout(timer); setTimeout(() => sub.unsubscribe(), 0); resolve(); } });
+  });
+
+  connEl.textContent = 'dialing';
+  call = await client.dial(currentDestination, {
+    audio: true, video: false, receiveAudio: true, receiveVideo: true,
+    userVariables: { game_id: gameId, player_name: getPlayerName(), mode: mode, interface: 'chess-web' }
+  });
+
+  subscriptions.push(call.remoteStream$.subscribe(stream => attachRemoteStream(stream)));
+  subscriptions.push(call.subscribe('user_event').subscribe(evt => {
+    const payload = (evt && evt.params !== undefined) ? evt.params : evt;
+    if (payload && payload.type === 'call_ended') intentionalEnd = true;   // agent ended -> no reconnect
+    else if (payload && payload.type === 'board_update') { selected = null; renderBoard(payload); }
+    logEvent('user_event', payload && payload.type);
+  }));
+  subscriptions.push(call.status$.subscribe({ next: st => {
+    logEvent('call.status', { status: st });
+    if (st === 'connected') {
+      wasConnected = true; reconnectAttempts = 0;
+      hideReconnectBanner();
+      connEl.textContent = 'connected';
+      connChip.classList.add('live');
+      connectBtn.style.display = 'none';
+      hangupBtn.style.display = 'inline-flex';
+      muteBtn.style.display = 'inline-grid';
+      renderBoard(board); // re-render to enable interactivity now that call exists
+    } else if (['disconnected', 'failed', 'destroyed'].includes(st)) handleDisconnect();
+  }}));
+}
+
+// Quietly drop the current client/call (no UI reset) — used before a reconnect attempt.
+function cleanupCall() {
+  subscriptions.forEach(s => { try { s.unsubscribe(); } catch (_) {} });
+  subscriptions = [];
+  try { if (call) call.hangup(); } catch (_) {}
+  try { if (client) client.disconnect(); } catch (_) {}
+  call = null; client = null;
+}
+
+// Auto-reconnect after an UNEXPECTED drop — resumes the SAME game (server-side state).
+function showReconnectBanner(txt) { reconnectText.textContent = txt; reconnectBanner.classList.add('show'); }
+function hideReconnectBanner() { reconnectBanner.classList.remove('show'); }
+
+async function reconnect() {
+  reconnectAttempts++;
+  connChip.classList.remove('live');
+  connEl.textContent = `reconnecting… (${reconnectAttempts}/${MAX_RECONNECT})`;
+  showReconnectBanner(`Connection lost — reconnecting… (${reconnectAttempts}/${MAX_RECONNECT})`);
+  logEvent('Connection dropped — reconnecting', { attempt: reconnectAttempts });
+  cleanupCall();
+  try {
+    await openCall();   // same gameId, no new game
+  } catch (e) {
+    logEvent('Reconnect attempt failed', { error: e.message });
+    if (reconnectAttempts >= MAX_RECONNECT) finalTeardown();
+    else setTimeout(reconnect, 1200 * reconnectAttempts);
+  }
+}
+
+// On disconnect: reconnect only if it was UNEXPECTED (not user Hang up, not Sigmond's
+// end_call, not a failed initial connect, and within the retry budget); else tear down.
+function handleDisconnect() {
+  if (teardownDone) return;
+  if (!intentionalEnd && wasConnected && reconnectAttempts < MAX_RECONNECT) {
+    reconnect();
+    return;
+  }
+  finalTeardown();
+}
+
+function finalTeardown() {
+  if (teardownDone) return; teardownDone = true;
+  hideReconnectBanner();
+  cleanupCall();
+  if (remoteVideoEl && remoteVideoEl.srcObject) { try { remoteVideoEl.srcObject.getTracks().forEach(t => t.stop()); } catch (_) {} }
+  connEl.textContent = 'disconnected';
+  connChip.classList.remove('live');
+  connectBtn.style.display = 'inline-flex'; connectBtn.disabled = false;
+  connectBtn.innerHTML = '<span class="material-symbols-outlined">mic</span> Connect &amp; Play';
+  hangupBtn.style.display = 'none'; muteBtn.style.display = 'none';
+  if (board) renderBoard(board);
 }
 
 let remoteVideoEl = null, lastSig = '';
@@ -410,22 +523,6 @@ function attachRemoteStream(stream) {
   remoteVideoEl.play().catch(() => {});
 }
 
-function handleDisconnect() {
-  if (teardownDone) return; teardownDone = true;
-  subscriptions.forEach(s => { try { s.unsubscribe(); } catch (_) {} });
-  subscriptions = [];
-  if (remoteVideoEl && remoteVideoEl.srcObject) { try { remoteVideoEl.srcObject.getTracks().forEach(t => t.stop()); } catch (_) {} }
-  try { if (call) call.hangup(); } catch (_) {}
-  try { if (client) client.disconnect(); } catch (_) {}
-  call = null;
-  connEl.textContent = 'disconnected';
-  connChip.classList.remove('live');
-  connectBtn.style.display = 'inline-flex'; connectBtn.disabled = false;
-  connectBtn.innerHTML = '<span class="material-symbols-outlined">mic</span> Connect &amp; Play';
-  hangupBtn.style.display = 'none'; muteBtn.style.display = 'none';
-  if (board) renderBoard(board);
-}
-
 async function toggleMute() {
   try {
     if (call && call.self && typeof call.self.mute === 'function') {
@@ -439,7 +536,7 @@ async function toggleMute() {
 
 // ---- wire up controls ----
 connectBtn.addEventListener('click', connectToCall);
-hangupBtn.addEventListener('click', handleDisconnect);
+hangupBtn.addEventListener('click', () => { intentionalEnd = true; finalTeardown(); });
 muteBtn.addEventListener('click', toggleMute);
 newBtn.addEventListener('click', () => newGame().catch(e => logEvent('new game error', { error: e.message })));
 resignBtn.addEventListener('click', async () => {
@@ -460,6 +557,22 @@ difficultySel.addEventListener('change', () => { levelEl.textContent = difficult
 colorSel.addEventListener('change', () => {
   if (!call && board) { board.player_color = colorSel.value; selected = null; renderBoard(board); }
 });
+
+// ---- mode (Game | Learn) — a pre-game setting applied at Connect ----
+function applyMode() {
+  [...modeToggle.querySelectorAll('.seg')].forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  modeHint.textContent = (mode === 'learn')
+    ? 'Sigmond coaches you: grades each of your moves and suggests better ones. Ask for a hint anytime.'
+    : 'Play a normal game against Sigmond.';
+}
+modeToggle.addEventListener('click', e => {
+  const btn = e.target.closest('.seg'); if (!btn) return;
+  mode = btn.dataset.mode === 'learn' ? 'learn' : 'game';
+  localStorage.setItem('chessMode', mode);
+  applyMode();
+  if (board) updateAnalysis(board); else if (mode !== 'learn') hideAnalysis();
+});
+applyMode();
 
 // ---- name capture ----
 nameChip.addEventListener('click', openNameDialog);
