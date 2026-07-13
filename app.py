@@ -63,6 +63,43 @@ PIECE_VALUE = {chess.PAWN: 1, chess.KNIGHT: 3, chess.BISHOP: 3,
 PIECE_LETTER_NL = {"knight": "N", "bishop": "B", "rook": "R", "queen": "Q", "king": "K", "pawn": ""}
 
 
+_SPOKEN_PIECE = {"N": "knight", "B": "bishop", "R": "rook", "Q": "queen", "K": "king"}
+
+
+def spoken_move(san):
+    """Turn SAN into a naturally-pronounced phrase so TTS says it right, e.g.
+    'Nc4' -> 'knight to c4', 'exd5' -> 'e takes d5', 'Bxf7+' -> 'bishop takes f7, check',
+    'O-O' -> 'castle kingside', 'e8=Q' -> 'pawn to e8 promoting to queen'."""
+    if not san:
+        return ""
+    s = str(san).strip()
+    suffix = ""
+    if s.endswith("#"):
+        suffix, s = ", checkmate", s[:-1]
+    elif s.endswith("+"):
+        suffix, s = ", check", s[:-1]
+    low = s.lower()
+    if low in ("o-o", "0-0"):
+        return "castle kingside" + suffix
+    if low in ("o-o-o", "0-0-0"):
+        return "castle queenside" + suffix
+    promo = ""
+    m = re.search(r"=([QRBNqrbn])$", s)
+    if m:
+        promo = " promoting to " + _SPOKEN_PIECE[m.group(1).upper()]
+        s = s[:m.start()]
+    capture = "x" in s
+    if s[:1] in _SPOKEN_PIECE:                       # piece move
+        piece, body = _SPOKEN_PIECE[s[0]], s[1:].replace("x", "")
+        dest, dis = body[-2:], body[:-2]
+        words = [piece] + ([" ".join(dis)] if dis else []) + ["takes" if capture else "to", dest]
+    else:                                            # pawn move
+        body = s.replace("x", "")
+        dest, dis = body[-2:], body[:-2]
+        words = ([dis, "takes", dest] if capture else ["pawn", "to", dest])
+    return " ".join(w for w in words if w) + promo + suffix
+
+
 def nl_to_san(text):
     """Loose natural-language -> SAN, e.g. 'pawn to e4'->'e4', 'knight takes f6'->'Nxf6'."""
     t = text.lower()
@@ -541,15 +578,15 @@ def coach_note(fen_before, played_uci):
     a = analyze_move(fen_before, played_uci)
     if not a:
         return None
-    ps, bs, g = a["played_san"], a["best_san"], a["grade"]
+    ps, bs, g = spoken_move(a["played_san"]), spoken_move(a["best_san"]), a["grade"]
     if g == "best":
         return (f"COACHING (learn mode): the player's move {ps} is the engine's top choice — excellent. "
-                "Praise it warmly and in one sentence say why it's strong.")
+                "Praise it warmly and in one sentence say why it's strong. Say moves naturally (e.g. 'knight to c4').")
     label = {"good": "a solid move", "inaccuracy": "a slight inaccuracy",
              "mistake": "a mistake", "blunder": "a blunder"}[g]
     return (f"COACHING (learn mode): the player's move {ps} is {label} (about {a['delta']} centipoints "
             f"worse than best). The stronger move was {bs}. Kindly point this out, explain in one short "
-            f"sentence what {bs} achieves that {ps} misses, and encourage them.")
+            f"sentence what {bs} achieves that {ps} misses, and encourage them. Say moves naturally (e.g. 'knight to c4').")
 
 
 def parse_move(board, text):
@@ -696,7 +733,7 @@ def do_player_then_engine(state, move_text, source="voice", game_id=None):
     if state.get("mode") == "learn":
         state["pending_coach"] = coach_note(fen_before, move.uci())
     human_san = apply_move(state, board, move, game_id, source, narrated=narrate)
-    msg = f"You played {human_san}. "
+    msg = f"You played {spoken_move(human_san)}. "
 
     if board.is_game_over():
         state["game_over"] = True
@@ -712,7 +749,7 @@ def do_player_then_engine(state, move_text, source="voice", game_id=None):
         return True, msg, board_payload(state, board, move)
     ucis.append(emove.uci())
     engine_san = apply_move(state, board, emove, game_id, "engine", narrated=narrate)
-    msg += f"I play {engine_san}."
+    msg += f"I play {spoken_move(engine_san)}."
     if board.is_check() and not board.is_game_over():
         msg += " Check!"
     if board.is_game_over():
@@ -752,6 +789,7 @@ class ChessOpponent(AgentBase):
                 "Convert it to standard notation and call make_move with move set to SAN (like 'e4', 'Nf3', 'exd5', 'O-O') or UCI (like 'e2e4', 'e7e8q' for promotion).",
                 "NEVER decide legality yourself and NEVER invent the board - make_move validates the move and returns exactly what happened, including MY reply move.",
                 "After make_move returns, announce to the player what they played and what I played, plus check/checkmate if stated. Then WAIT for their next move.",
+                "ALWAYS say moves in natural spoken English, never as raw notation: say 'knight to c4' (not 'N c 4'), 'pawn takes d5', 'castle kingside', 'e four' for e4, 'queen takes e7, check'. The function results already give you the spoken form — use it.",
                 "If make_move says the move is illegal, tell the player and ask them to try another move - do NOT call make_move again until they give a new move.",
                 "Call make_move only ONCE per SPOKEN move.",
                 "If the player asks to start over, call new_game. If they ask to make it harder/easier or set a level, call change_difficulty. If they resign, call resign. If they ask what a term means, call explain_term.",
@@ -857,7 +895,8 @@ class ChessOpponent(AgentBase):
             # Attribute by source: click/voice moves are the PLAYER's, engine moves are YOURS.
             user_moves = [san for (_id, _ply, san, src) in rows if src != "engine"]
             agent_moves = [san for (_id, _ply, san, src) in rows if src == "engine"]
-            um, am = ", ".join(user_moves), ", ".join(agent_moves)
+            um = ", ".join(spoken_move(s) for s in user_moves)
+            am = ", ".join(spoken_move(s) for s in agent_moves)
             if user_moves and agent_moves:
                 body = (f"The USER moved {um} on the board, and you (the AGENT, Sigmond) already "
                         f"replied {am}. Announce the USER's move, then state your reply.")
@@ -916,7 +955,7 @@ class ChessOpponent(AgentBase):
                 emove = engine_reply(board, state["difficulty"])
                 if emove:
                     san = apply_move(state, board, emove, gid, "engine", narrated=True)
-                    msg = f"New game! You're Black. I open with {san}. Your move."
+                    msg = f"New game! You're Black. I open with {spoken_move(san)}. Your move."
                     last = emove
                     attach_gif(state, START_FEN, [emove.uci()])
             result = SwaigFunctionResult(msg)
@@ -1000,7 +1039,7 @@ class ChessOpponent(AgentBase):
             turn = "your" if (board.turn == chess.WHITE) == (state["player_color"] == "white") else "my"
             bal = material_balance(board)
             who = "even material" if bal == 0 else (f"White up {abs(bal)}" if bal > 0 else f"Black up {abs(bal)}")
-            last = state["history"][-1] if state["history"] else "no moves yet"
+            last = spoken_move(state["history"][-1]) if state["history"] else "no moves yet"
             result = SwaigFunctionResult(
                 f"It's {turn} move. Last move: {last}. Material: {who}. "
                 f"Move {len(state['history'])} of the game.")
@@ -1042,8 +1081,8 @@ class ChessOpponent(AgentBase):
             tops = best_moves(state["fen"], 3)
             if not tops:
                 return SwaigFunctionResult("Let me look at the board — try again in a moment.")
-            best = tops[0][0]
-            alts = ", ".join(s for s, _cp in tops[1:3])
+            best = spoken_move(tops[0][0])
+            alts = ", ".join(spoken_move(s) for s, _cp in tops[1:3])
             extra = f" Other reasonable tries: {alts}." if alts else ""
             return SwaigFunctionResult(
                 f"HINT: a strong move here is {best}.{extra} Suggest {best} to the player and explain "
