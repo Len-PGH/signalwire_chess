@@ -762,6 +762,22 @@ def do_player_then_engine(state, move_text, source="voice", game_id=None):
     return True, msg, board_payload(state, board, emove)
 
 
+# ── TTS voice selection ──────────────────────────────────────────────────────
+# The web UI lets the player pick Sigmond's voice (grouped by vendor). The choice
+# is sent to /get_token, stored here, and applied per-call in on_swml_request when
+# SignalWire fetches the SWML for the /chess handler. Single worker → a module
+# global is sufficient (the game store is in-process for the same reason).
+DEFAULT_VOICE = "elevenlabs.adam"
+_selected_voice = {"voice": DEFAULT_VOICE}
+
+def get_selected_voice():
+    return _selected_voice.get("voice") or DEFAULT_VOICE
+
+def set_selected_voice(voice):
+    if voice:
+        _selected_voice["voice"] = voice
+
+
 class ChessOpponent(AgentBase):
     """Sigmond - your AI chess opponent (voice + interactive board)."""
 
@@ -1088,6 +1104,17 @@ class ChessOpponent(AgentBase):
                 f"HINT: a strong move here is {best}.{extra} Suggest {best} to the player and explain "
                 "in one short sentence why it's a good idea — but let THEM make the move.")
 
+    def on_swml_request(self, request_data=None, callback_path=None, request=None):
+        """Apply the player's chosen TTS voice (set via /get_token) to this call."""
+        voice = get_selected_voice()
+        # Rebuild the single language so the voice reflects the latest selection
+        # (add_language appends, so clear first to avoid accumulation across calls).
+        if hasattr(self, "_languages"):
+            self._languages = []
+        self.add_language(name="English", code="en-US", voice=voice)
+        print(f"chess: using voice {voice}", flush=True)
+        return super().on_swml_request(request_data, callback_path, request)
+
 HOST = "0.0.0.0"
 PORT = int(os.environ.get('PORT', 5000))
 
@@ -1274,8 +1301,15 @@ def create_server(port=None):
 
     # Add /get_token endpoint for WebRTC calls
     @server.app.get('/get_token')
-    def get_token():
-        """Get a guest token for the web client to call the agent."""
+    def get_token(voice: str = ""):
+        """Get a guest token for the web client to call the agent.
+
+        `voice` (optional) is the TTS voice the player picked in the UI; it is
+        stored and applied to the call when SignalWire fetches the SWML.
+        """
+        if voice:
+            set_selected_voice(voice)
+            print(f"chess: stored voice selection {voice}", flush=True)
         sw_host = get_signalwire_host()
         project = os.getenv("SIGNALWIRE_PROJECT_ID", "")
         token = os.getenv("SIGNALWIRE_TOKEN", "")
