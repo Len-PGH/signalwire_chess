@@ -778,11 +778,23 @@ def set_selected_voice(voice):
         _selected_voice["voice"] = voice
 
 
+# ── Session audio recording (opt-in from the UI) ─────────────────────────────
+# The player chooses whether this session's audio is recorded. Like the voice
+# pick, the choice is sent to /get_token and applied per-call in on_swml_request.
+_record_audio = {"on": True}
+
+def get_record_audio():
+    return bool(_record_audio.get("on", True))
+
+def set_record_audio(on):
+    _record_audio["on"] = bool(on)
+
+
 class ChessOpponent(AgentBase):
     """Sigmond - your AI chess opponent (voice + interactive board)."""
 
     def __init__(self):
-        super().__init__(name="Chess", route="/chess", record_call=True)
+        super().__init__(name="Chess", route="/chess", record_call=True, record_format="mp3")
 
         self.prompt_add_section(
             "Personality",
@@ -1105,14 +1117,17 @@ class ChessOpponent(AgentBase):
                 "in one short sentence why it's a good idea — but let THEM make the move.")
 
     def on_swml_request(self, request_data=None, callback_path=None, request=None):
-        """Apply the player's chosen TTS voice (set via /get_token) to this call."""
+        """Apply per-call choices (TTS voice + audio recording) set via /get_token."""
         voice = get_selected_voice()
         # Rebuild the single language so the voice reflects the latest selection
         # (add_language appends, so clear first to avoid accumulation across calls).
         if hasattr(self, "_languages"):
             self._languages = []
         self.add_language(name="English", code="en-US", voice=voice)
-        print(f"chess: using voice {voice}", flush=True)
+        # Honor the player's recording choice (the record_call verb is emitted at
+        # render time based on self._record_call).
+        self._record_call = get_record_audio()
+        print(f"chess: using voice {voice}, record={self._record_call}", flush=True)
         return super().on_swml_request(request_data, callback_path, request)
 
 HOST = "0.0.0.0"
@@ -1301,15 +1316,20 @@ def create_server(port=None):
 
     # Add /get_token endpoint for WebRTC calls
     @server.app.get('/get_token')
-    def get_token(voice: str = ""):
+    def get_token(voice: str = "", record: str = ""):
         """Get a guest token for the web client to call the agent.
 
-        `voice` (optional) is the TTS voice the player picked in the UI; it is
-        stored and applied to the call when SignalWire fetches the SWML.
+        `voice` (optional) is the TTS voice the player picked in the UI, and
+        `record` (optional, "true"/"false") is whether to record this session's
+        audio. Both are stored and applied when SignalWire fetches the SWML.
         """
         if voice:
             set_selected_voice(voice)
             print(f"chess: stored voice selection {voice}", flush=True)
+        if record != "":
+            on = record.strip().lower() in ("1", "true", "yes", "on")
+            set_record_audio(on)
+            print(f"chess: stored recording choice {on}", flush=True)
         sw_host = get_signalwire_host()
         project = os.getenv("SIGNALWIRE_PROJECT_ID", "")
         token = os.getenv("SIGNALWIRE_TOKEN", "")

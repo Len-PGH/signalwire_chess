@@ -13,6 +13,7 @@ let selected = null;       // selected square (algebraic) awaiting a target
 let isMuted = false, teardownDone = false, busy = false;
 let mode = (localStorage.getItem('chessMode') === 'learn') ? 'learn' : 'game';  // 'game' | 'learn'
 let selectedVoice = localStorage.getItem('chessVoice') || '';  // Sigmond's TTS voice (applied at Connect)
+let recordAudio = localStorage.getItem('chessRecord') !== 'false';  // record session audio (default on)
 
 // U+FE0E (text variation selector) forces monochrome TEXT rendering — without it,
 // mobile browsers (iOS/Android) draw these as emoji, which resize squares and can
@@ -32,6 +33,7 @@ const newBtn = $('newBtn'), resignBtn = $('resignBtn');
 const difficultySel = $('difficulty'), colorSel = $('color');
 const modeToggle = $('modeToggle'), modeHint = $('modeHint');
 const voiceSel = $('voiceSelect');
+const recordToggle = $('recordToggle');
 const evalbar = $('evalbar'), evalfill = $('evalfill'), arrows = $('arrows'), evalChip = $('evalChip'), evalVal = $('evalVal');
 const connChip = $('connChip');
 const nameChip = $('nameChip'), nameLabel = $('nameLabel'), nameAvatar = $('nameAvatar');
@@ -369,7 +371,10 @@ async function ensureMicrophone() {
 
 async function fetchGuestToken() {
   const v = (typeof selectedVoice === 'string' && selectedVoice) ? selectedVoice : '';
-  const r = await fetch('/get_token' + (v ? ('?voice=' + encodeURIComponent(v)) : ''));
+  const qs = new URLSearchParams();
+  if (v) qs.set('voice', v);
+  qs.set('record', recordAudio ? 'true' : 'false');
+  const r = await fetch('/get_token?' + qs.toString());
   let data = await r.json();
   if (Array.isArray(data)) data = data[0] || {};
   if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
@@ -617,6 +622,15 @@ if (voiceSel) {
     localStorage.setItem('chessVoice', selectedVoice);
   });
   loadVoices();
+}
+
+// ---- record-session-audio toggle (applied at Connect) ----
+if (recordToggle) {
+  recordToggle.checked = recordAudio;
+  recordToggle.addEventListener('change', () => {
+    recordAudio = recordToggle.checked;
+    localStorage.setItem('chessRecord', recordAudio ? 'true' : 'false');
+  });
 }
 
 // ---- name capture ----
